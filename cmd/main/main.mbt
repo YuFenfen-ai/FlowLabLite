@@ -8,37 +8,31 @@
 
 // 网格类：结构化正交网格
 class Mesh2D {
-    var Nx : int
-    var Ny : int
-    var L  : float
-    var dx : float
-    var dy : float
-
-    func init(nX : int, nY : int, length : float) {
-        Nx = nX
-        Ny = nY
-        L = length
-        dx = L / (Nx - 1)
-        dy = L / (Ny - 1)
+    fn init(nX : int, nY : int, length : float) {
+        self.Nx : int = nX
+        self.Ny : int = nY
+        self.L  : float = length
+        self.dx : float = self.L / (self.Nx - 1)
+        self.dy : float = self.L / (self.Ny - 1)
     }
 
     // 获取单元中心坐标
-    func cellCenter(i : int, j : int) -> (float, float) {
-        return (i * dx, j * dy)
+    fn cellCenter(i : int, j : int) -> (float, float) {
+        return (i * self.dx, j * self.dy)
     }
 }
 
 // 场类：模拟volScalarField/volVectorField
 class Field<T> {
-    var mesh : Mesh2D
-    var data : T[][]
+    let mesh : Mesh2D
+    let data : T[][]
 
-    func init(m : Mesh2D) {
+    fn init(m : Mesh2D) {
         mesh = m
         data = new T[mesh.Nx][mesh.Ny]
     }
 
-    func setAll(value : T) {
+    fn setAll(value : T) {
         for i in 0..mesh.Nx-1 {
             for j in 0..mesh.Ny-1 {
                 data[i][j] = value
@@ -46,16 +40,16 @@ class Field<T> {
         }
     }
 
-    func at(i : int, j : int) -> T {
+    fn at(i : int, j : int) -> T {
         return data[i][j]
     }
 
-    func set(i : int, j : int, value : T) {
+    fn set(i : int, j : int, value : T) {
         data[i][j] = value
     }
 
     // 梯度算子（有限体积）
-    func grad(i : int, j : int) -> (float, float) {
+    fn grad(i : int, j : int) -> (float, float) {
         // 简化：中心差分
         var gx = (data[i+1][j] - data[i-1][j]) / (2 * mesh.dx)
         var gy = (data[i][j+1] - data[i][j-1]) / (2 * mesh.dy)
@@ -63,7 +57,7 @@ class Field<T> {
     }
 
     // 散度算子
-    func div(i : int, j : int) -> float {
+    fn div(i : int, j : int) -> float {
         // 简化：中心差分
         var dx = (data[i+1][j] - data[i-1][j]) / (2 * mesh.dx)
         var dy = (data[i][j+1] - data[i][j-1]) / (2 * mesh.dy)
@@ -77,22 +71,22 @@ class Matrix {
     var cols : int
     var data : float[][]
 
-    func init(r : int, c : int) {
+    fn init(r : int, c : int) {
         rows = r
         cols = c
         data = new float[r][c]
     }
 
-    func set(i : int, j : int, value : float) {
+    fn set(i : int, j : int, value : float) {
         data[i][j] = value
     }
 
-    func at(i : int, j : int) -> float {
+    fn at(i : int, j : int) -> float {
         return data[i][j]
     }
 
     // 简单高斯-赛德尔求解器（可扩展到更高效方法）
-    func solve(b : float[], x : float[], maxIter : int, tol : float) {
+    fn solve(b : float[], x : float[], maxIter : int, tol : float) {
         for iter in 0..maxIter-1 {
             var maxErr = 0.0
             for i in 0..rows-1 {
@@ -122,7 +116,7 @@ class CavitySolver {
     var maxIter : int
     var tol : float
 
-    func init(nX : int, nY : int, length : float, reynolds : float, maxIt : int, tolerance : float) {
+    fn init(nX : int, nY : int, length : float, reynolds : float, maxIt : int, tolerance : float) {
         mesh = new Mesh2D(nX, nY, length)
         u = new Field<float>(mesh)
         v = new Field<float>(mesh)
@@ -132,13 +126,13 @@ class CavitySolver {
         tol = tolerance
     }
 
-    func initialize() {
+    fn initialize() {
         u.setAll(0.0)
         v.setAll(0.0)
         p.setAll(0.0)
     }
 
-    func applyBoundaryConditions() {
+    fn applyBoundaryConditions() {
         // 顶盖：u=1, v=0
         for i in 0..mesh.Nx-1 {
             u.set(i, mesh.Ny-1, 1.0)
@@ -157,7 +151,7 @@ class CavitySolver {
         }
     }
 
-    func step() {
+    fn step() {
         // SIMPLE算法：预测-修正
         var dt = 0.001  // 时间步长（稳态中用于松弛）
         var nu = 1.0 / Re  // 粘性系数
@@ -218,7 +212,7 @@ class CavitySolver {
         }
     }
 
-    func run() -> (Field<float>, Field<float>, Field<float>) {
+    fn run() -> (Field<float>, Field<float>, Field<float>) {
         initialize()
         applyBoundaryConditions()
         for iter in 0..maxIter-1 {
@@ -230,7 +224,7 @@ class CavitySolver {
 }
 
 // 主函数：示例运行
-func main() {
+fn main() {
     var solver = new CavitySolver(50, 50, 1.0, 100.0, 1000, 1e-6)
     var (u, v, p) = solver.run()
     println("Simulation complete. Fields ready for visualization.")
@@ -238,7 +232,7 @@ func main() {
 }
 
 // 导出函数供Web调用（假设编译到WASM）
-pub func runSimulation(nX : int, nY : int, L : float, Re : float, maxIter : int, tol : float) -> string {
+pub fn runSimulation(nX : int, nY : int, L : float, Re : float, maxIter : int, tol : float) -> string {
     var solver = new CavitySolver(nX, nY, L, Re, maxIter, tol)
     var (u, v, p) = solver.run()
     // 序列化为JSON字符串供JS解析
