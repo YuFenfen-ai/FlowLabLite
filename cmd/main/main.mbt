@@ -82,6 +82,29 @@ fn Matrix::set(self : Matrix, i : Int, j : Int, value : Double) -> Unit {
 fn Matrix::at(self : Matrix, i : Int, j : Int) -> Double {
   self.data[i][j]
 }
+// 简单高斯-赛德尔求解器
+fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter : Int, tol : Double) -> Unit {
+  for iter = 0; iter < max_iter; iter = iter + 1 {
+    let mut max_err = 0.0
+    for i = 0; i < self.rows; i = i + 1 {
+      let mut sum = 0.0
+      for j = 0; j < self.cols; j = j + 1 {
+        if j != i {
+          sum = sum + self.data[i][j] * x[j]
+        }
+      }
+      let new_x = (b[i] - sum) / self.data[i][i]
+      let err = if new_x - x[i] > 0.0 { new_x - x[i] } else { x[i] - new_x }
+      if err > max_err { 
+        max_err = err 
+      }
+      x[i] = new_x
+    }
+    if max_err < tol { 
+      break 
+    }
+  }
+}
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
     var mesh : Mesh2D
