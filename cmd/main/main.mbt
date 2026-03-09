@@ -69,7 +69,11 @@ struct Matrix {
   cols : Int
   mut data : Array[Array[Double]]
 }
-
+// Matrix的构造函数
+fn Matrix::new(rows : Int, cols : Int) -> Matrix {
+  let data = Array::make(rows, Array::make(cols, 0.0))
+  { rows, cols, data }
+}
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
     var mesh : Mesh2D
