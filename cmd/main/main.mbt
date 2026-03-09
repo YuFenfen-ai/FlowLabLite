@@ -24,52 +24,43 @@ fn Mesh2D::new(nx : Int, ny : Int, length : Double) -> Mesh2D {
 fn Mesh2D::cell_center(self : Mesh2D, i : Int, j : Int) -> (Double, Double) {
   (i.to_double() * self.dx, j.to_double() * self.dy)
 }
-
 // 场类：模拟volScalarField/volVectorField
-struct Field<T> {
-    let mesh : Mesh2D
-    let data : T[][]
-
-    fn init(m : Mesh2D) {
-        mesh = m
-        data = new T[mesh.Nx][mesh.Ny]
+struct Field[T] {
+  mesh : Mesh2D
+  mut data : Array[Array[T]]
+}
+// Field的构造函数
+fn Field::new[T : Default](mesh : Mesh2D) -> Field[T] {
+  let data = Array::make(mesh.nx, Array::make(mesh.ny, T::default()))
+  { mesh, data }
+}
+// 设置所有值
+fn Field::set_all[T](self : Field[T], value : T) -> Unit {
+  for i = 0; i < self.mesh.nx; i = i + 1 {
+    for j = 0; j < self.mesh.ny; j = j + 1 {
+      self.data[i][j] = value
     }
-
-    fn setAll(value : T) {
-        for i in 0..mesh.Nx-1 {
-            for j in 0..mesh.Ny-1 {
-                data[i][j] = value
-            }
-        }
-    }
-        fn init(m : Mesh2D) {
-            mesh = m
-            data = new T[mesh.Nx][mesh.Ny]
-        }
-
-    fn at(i : Int, j : Int) -> T {
-        return data[i][j]
-    }
-
-    fn set(i : Int, j : Int, value : T) {
-        data[i][j] = value
-    }
-
-    // 梯度算子（有限体积）
-    fn grad(i : Int, j : Int) -> (Float, Float) {
-        // 简化：中心差分
-        var gx = (data[i+1][j] - data[i-1][j]) / (2 * mesh.dx)
-        var gy = (data[i][j+1] - data[i][j-1]) / (2 * mesh.dy)
-        return (gx, gy)
-    }
-
-    // 散度算子
-    fn div(i : Int, j : Int) -> Float {
-        // 简化：中心差分
-        var dx = (data[i+1][j] - data[i-1][j]) / (2 * mesh.dx)
-        var dy = (data[i][j+1] - data[i][j-1]) / (2 * mesh.dy)
-        return dx + dy
-    }
+  }
+}
+// 获取指定位置的值
+fn Field::at[T](self : Field[T], i : Int, j : Int) -> T {
+  self.data[i][j]
+}
+// 设置指定位置的值
+fn Field::set[T](self : Field[T], i : Int, j : Int, value : T) -> Unit {
+  self.data[i][j] = value
+}
+// 梯度算子（有限体积）- 仅适用于Double类型
+fn Field::grad(self : Field[Double], i : Int, j : Int) -> (Double, Double) {
+  let gx = (self.data[i + 1][j] - self.data[i - 1][j]) / (2.0 * self.mesh.dx)
+  let gy = (self.data[i][j + 1] - self.data[i][j - 1]) / (2.0 * self.mesh.dy)
+  (gx, gy)
+}
+// 散度算子 - 仅适用于Double类型
+fn Field::div(self : Field[Double], i : Int, j : Int) -> Double {
+  let dx = (self.data[i + 1][j] - self.data[i - 1][j]) / (2.0 * self.mesh.dx)
+  let dy = (self.data[i][j + 1] - self.data[i][j - 1]) / (2.0 * self.mesh.dy)
+  dx + dy
 }
 
 // 矩阵类：用于线性方程组（压力泊松等）
