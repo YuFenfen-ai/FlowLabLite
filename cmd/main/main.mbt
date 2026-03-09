@@ -7,7 +7,7 @@
 // 易用性：简单接口，参数化配置
 
 // 网格类：结构化正交网格
-class Mesh2D {
+struct Mesh2D {
     fn init(nX : int, nY : int, length : float) {
         self.Nx : int = nX
         self.Ny : int = nY
@@ -23,7 +23,7 @@ class Mesh2D {
 }
 
 // 场类：模拟volScalarField/volVectorField
-class Field<T> {
+struct Field<T> {
     let mesh : Mesh2D
     let data : T[][]
 
@@ -66,7 +66,7 @@ class Field<T> {
 }
 
 // 矩阵类：用于线性方程组（压力泊松等）
-class Matrix {
+struct Matrix {
     var rows : int
     var cols : int
     var data : float[][]
@@ -107,7 +107,7 @@ class Matrix {
 }
 
 // 求解器类：封装SIMPLE算法
-class CavitySolver {
+struct CavitySolver {
     var mesh : Mesh2D
     var u : Field<float>  // x速度
     var v : Field<float>  // y速度
