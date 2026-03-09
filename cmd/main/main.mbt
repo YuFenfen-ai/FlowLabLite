@@ -74,6 +74,10 @@ fn Matrix::new(rows : Int, cols : Int) -> Matrix {
   let data = Array::make(rows, Array::make(cols, 0.0))
   { rows, cols, data }
 }
+// 设置矩阵元素值
+fn Matrix::set(self : Matrix, i : Int, j : Int, value : Double) -> Unit {
+  self.data[i][j] = value
+}
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
     var mesh : Mesh2D
