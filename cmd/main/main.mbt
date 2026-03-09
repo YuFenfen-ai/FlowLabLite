@@ -65,48 +65,9 @@ fn Field::div(self : Field[Double], i : Int, j : Int) -> Double {
 
 // 矩阵类：用于线性方程组（压力泊松等）
 struct Matrix {
-    var rows : Int
-    var cols : Int
-    var data : Float[][]
-
-    fn init(r : Int, c : Int) {
-        rows = r
-        cols = c
-        data = new Float[r][c]
-    }
-
-    fn set(i : Int, j : Int, value : Float) {
-        data[i][j] = value
-    }
-        fn init(r : Int, c : Int) {
-            rows = r
-            cols = c
-            data = new Float[r][c]
-        }
-
-    fn at(i : Int, j : Int) -> Float {
-        return data[i][j]
-    }
-
-    // 简单高斯-赛德尔求解器（可扩展到更高效方法）
-    fn solve(b : Float[], x : Float[], maxIter : Int, tol : Float) {
-        for iter in 0..maxIter-1 {
-            var maxErr = 0.0
-            for i in 0..rows-1 {
-                var sum = 0.0
-                for j in 0..cols-1 {
-                    if j != i {
-                        sum += data[i][j] * x[j]
-                    }
-                }
-                var newX = (b[i] - sum) / data[i][i]
-                var err = abs(newX - x[i])
-                if err > maxErr { maxErr = err }
-                x[i] = newX
-            }
-            if maxErr < tol { break }
-        }
-    }
+  rows : Int
+  cols : Int
+  mut data : Array[Array[Double]]
 }
 
 // 求解器类：封装SIMPLE算法
