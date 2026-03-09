@@ -8,17 +8,22 @@
 
 // 网格类：结构化正交网格
 struct Mesh2D {
-    fn init(nX : int, nY : int, length : float) {
-        self.Nx : int = nX
-        self.Ny : int = nY
+    // 获取单元中心坐标
+    fn cellCenter(i : Int, j : Int) -> (float, float) {
+        return (i * self.dx, j * self.dy)
+    }
+
+
+
+
+
+    // 构造函数必须放在结构体末尾
+    fn Init(nX : Int, nY : Int, length : float) {
+        self.Nx : Int = nX
+        self.Ny : Int = nY
         self.L  : float = length
         self.dx : float = self.L / (self.Nx - 1)
         self.dy : float = self.L / (self.Ny - 1)
-    }
-
-    // 获取单元中心坐标
-    fn cellCenter(i : int, j : int) -> (float, float) {
-        return (i * self.dx, j * self.dy)
     }
 }
 
@@ -39,17 +44,21 @@ struct Field<T> {
             }
         }
     }
+        fn init(m : Mesh2D) {
+            mesh = m
+            data = new T[mesh.Nx][mesh.Ny]
+        }
 
-    fn at(i : int, j : int) -> T {
+    fn at(i : Int, j : Int) -> T {
         return data[i][j]
     }
 
-    fn set(i : int, j : int, value : T) {
+    fn set(i : Int, j : Int, value : T) {
         data[i][j] = value
     }
 
     // 梯度算子（有限体积）
-    fn grad(i : int, j : int) -> (float, float) {
+    fn grad(i : Int, j : Int) -> (float, float) {
         // 简化：中心差分
         var gx = (data[i+1][j] - data[i-1][j]) / (2 * mesh.dx)
         var gy = (data[i][j+1] - data[i][j-1]) / (2 * mesh.dy)
@@ -57,7 +66,7 @@ struct Field<T> {
     }
 
     // 散度算子
-    fn div(i : int, j : int) -> float {
+    fn div(i : Int, j : Int) -> float {
         // 简化：中心差分
         var dx = (data[i+1][j] - data[i-1][j]) / (2 * mesh.dx)
         var dy = (data[i][j+1] - data[i][j-1]) / (2 * mesh.dy)
@@ -67,26 +76,31 @@ struct Field<T> {
 
 // 矩阵类：用于线性方程组（压力泊松等）
 struct Matrix {
-    var rows : int
-    var cols : int
+    var rows : Int
+    var cols : Int
     var data : float[][]
 
-    fn init(r : int, c : int) {
+    fn init(r : Int, c : Int) {
         rows = r
         cols = c
         data = new float[r][c]
     }
 
-    fn set(i : int, j : int, value : float) {
+    fn set(i : Int, j : Int, value : float) {
         data[i][j] = value
     }
+        fn init(r : Int, c : Int) {
+            rows = r
+            cols = c
+            data = new float[r][c]
+        }
 
-    fn at(i : int, j : int) -> float {
+    fn at(i : Int, j : Int) -> float {
         return data[i][j]
     }
 
     // 简单高斯-赛德尔求解器（可扩展到更高效方法）
-    fn solve(b : float[], x : float[], maxIter : int, tol : float) {
+    fn solve(b : float[], x : float[], maxIter : Int, tol : float) {
         for iter in 0..maxIter-1 {
             var maxErr = 0.0
             for i in 0..rows-1 {
@@ -113,10 +127,10 @@ struct CavitySolver {
     var v : Field<float>  // y速度
     var p : Field<float>  // 压力
     var Re : float        // 雷诺数
-    var maxIter : int
+    var maxIter : Int
     var tol : float
 
-    fn init(nX : int, nY : int, length : float, reynolds : float, maxIt : int, tolerance : float) {
+    fn init(nX : Int, nY : Int, length : float, reynolds : float, maxIt : Int, tolerance : float) {
         mesh = new Mesh2D(nX, nY, length)
         u = new Field<float>(mesh)
         v = new Field<float>(mesh)
@@ -131,6 +145,15 @@ struct CavitySolver {
         v.setAll(0.0)
         p.setAll(0.0)
     }
+        fn init(nX : Int, nY : Int, length : float, reynolds : float, maxIt : Int, tolerance : float) {
+            mesh = new Mesh2D(nX, nY, length)
+            u = new Field<float>(mesh)
+            v = new Field<float>(mesh)
+            p = new Field<float>(mesh)
+            Re = reynolds
+            maxIter = maxIt
+            tol = tolerance
+        }
 
     fn applyBoundaryConditions() {
         // 顶盖：u=1, v=0
@@ -232,7 +255,7 @@ fn main() {
 }
 
 // 导出函数供Web调用（假设编译到WASM）
-pub fn runSimulation(nX : int, nY : int, L : float, Re : float, maxIter : int, tol : float) -> string {
+pub fn runSimulation(nX : Int, nY : Int, L : float, Re : float, maxIter : Int, tol : float) -> string {
     var solver = new CavitySolver(nX, nY, L, Re, maxIter, tol)
     var (u, v, p) = solver.run()
     // 序列化为JSON字符串供JS解析
