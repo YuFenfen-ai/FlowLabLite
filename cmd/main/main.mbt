@@ -78,6 +78,10 @@ fn Matrix::new(rows : Int, cols : Int) -> Matrix {
 fn Matrix::set(self : Matrix, i : Int, j : Int, value : Double) -> Unit {
   self.data[i][j] = value
 }
+// 获取矩阵元素值
+fn Matrix::at(self : Matrix, i : Int, j : Int) -> Double {
+  self.data[i][j]
+}
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
     var mesh : Mesh2D
