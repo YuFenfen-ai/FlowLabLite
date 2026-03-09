@@ -6,25 +6,23 @@
 // 可读性/可维护性：模块化设计，清晰注释
 // 易用性：简单接口，参数化配置
 
-// 网格类：结构化正交网格
+/// 网格类：结构化正交网格
 struct Mesh2D {
-    // 获取单元中心坐标
-    fn cellCenter(i : Int, j : Int) -> (Float, Float) {
-        return (i * self.dx, j * self.dy)
-    }
-
-
-
-
-
-    // 构造函数必须放在结构体末尾
-    fn Init(nX : Int, nY : Int, length : Float) {
-        self.Nx : Int = nX
-        self.Ny : Int = nY
-        self.L  : Float = length
-        self.dx : Float = self.L / (self.Nx - 1)
-        self.dy : Float = self.L / (self.Ny - 1)
-    }
+  nx : Int
+  ny : Int
+  l : Double
+  dx : Double
+  dy : Double
+}
+// Mesh2D的构造函数
+fn Mesh2D::new(nx : Int, ny : Int, length : Double) -> Mesh2D {
+  let dx = length / (nx - 1).to_double()
+  let dy = length / (ny - 1).to_double()
+  { nx, ny, l: length, dx, dy }
+}
+// 获取单元中心坐标
+fn Mesh2D::cell_center(self : Mesh2D, i : Int, j : Int) -> (Double, Double) {
+  (i.to_double() * self.dx, j.to_double() * self.dy)
 }
 
 // 场类：模拟volScalarField/volVectorField
@@ -255,7 +253,7 @@ fn main() {
 }
 
 // 导出函数供Web调用（假设编译到WASM）
-pub fn runSimulation(nX : Int, nY : Int, L : Float, Re : Float, maxIter : Int, tol : Float) -> string {
+pub fn runSimulation(nX : Int, nY : Int, L : Float, Re : Float, maxIter : Int, tol : Float) -> String {
     var solver = new CavitySolver(nX, nY, L, Re, maxIter, tol)
     var (u, v, p) = solver.run()
     // 序列化为JSON字符串供JS解析
