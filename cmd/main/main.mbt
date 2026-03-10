@@ -142,6 +142,81 @@ fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
     self.v.set(i, 0, 0.0)
   }
 }
+// SIMPLE算法的一个时间步
+fn CavitySolver::step(self : CavitySolver) -> Unit {
+  let dt = 0.001  // 时间步长（稳态中用于松弛）
+  let nu = 1.0 / self.re  // 粘性系数
+
+  // 1. 预测速度（显式离散动量方程）
+  let u_star = Field::new(self.mesh)
+  let v_star = Field::new(self.mesh)
+  
+  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
+    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      // 对流+扩散项（简化中心差分）
+      let conv_u = self.u.at(i, j) * (self.u.at(i + 1, j) - self.u.at(i - 1, j)) / (2.0 * self.mesh.dx) +
+                   self.v.at(i, j) * (self.u.at(i, j + 1) - self.u.at(i, j - 1)) / (2.0 * self.mesh.dy)
+      let diff_u = nu * ((self.u.at(i + 1, j) - 2.0 * self.u.at(i, j) + self.u.at(i - 1, j)) / (self.mesh.dx * self.mesh.dx) +
+                         (self.u.at(i, j + 1) - 2.0 * self.u.at(i, j) + self.u.at(i, j - 1)) / (self.mesh.dy * self.mesh.dy))
+      let p_grad = self.p.grad(i, j)
+      u_star.set(i, j, self.u.at(i, j) + dt * (-conv_u + diff_u - p_grad.0))
+
+      let conv_v = self.u.at(i, j) * (self.v.at(i + 1, j) - self.v.at(i - 1, j)) / (2.0 * self.mesh.dx) +
+                   self.v.at(i, j) * (self.v.at(i, j + 1) - self.v.at(i, j - 1)) / (2.0 * self.mesh.dy)
+      let diff_v = nu * ((self.v.at(i + 1, j) - 2.0 * self.v.at(i, j) + self.v.at(i - 1, j)) / (self.mesh.dx * self.mesh.dx) +
+                         (self.v.at(i, j + 1) - 2.0 * self.v.at(i, j) + self.v.at(i, j - 1)) / (self.mesh.dy * self.mesh.dy))
+      v_star.set(i, j, self.v.at(i, j) + dt * (-conv_v + diff_v - p_grad.1))
+    }
+  }
+
+  // 2. 压力泊松方程
+  let matrix_size = self.mesh.nx * self.mesh.ny
+  let a_matrix = Matrix::new(matrix_size, matrix_size)
+  let b_vec = Array::make(matrix_size, 0.0)
+  let mut idx = 0
+  
+  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
+    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      let coeff = -2.0 / (self.mesh.dx * self.mesh.dx) - 2.0 / (self.mesh.dy * self.mesh.dy)
+      a_matrix.set(idx, idx, coeff)
+      if i > 0 { 
+        a_matrix.set(idx, idx - 1, 1.0 / (self.mesh.dx * self.mesh.dx)) 
+      }
+      if i < self.mesh.nx - 1 { 
+        a_matrix.set(idx, idx + 1, 1.0 / (self.mesh.dx * self.mesh.dx)) 
+      }
+      if j > 0 { 
+        a_matrix.set(idx, idx - self.mesh.nx, 1.0 / (self.mesh.dy * self.mesh.dy)) 
+      }
+      if j < self.mesh.ny - 1 { 
+        a_matrix.set(idx, idx + self.mesh.nx, 1.0 / (self.mesh.dy * self.mesh.dy)) 
+      }
+      b_vec[idx] = (u_star.at(i + 1, j) - u_star.at(i - 1, j)) / (2.0 * self.mesh.dx) +
+                   (v_star.at(i, j + 1) - v_star.at(i, j - 1)) / (2.0 * self.mesh.dy)
+      idx = idx + 1
+    }
+  }
+  
+  let p_vec = Array::make(matrix_size, 0.0)
+  a_matrix.solve(b_vec, p_vec, 100, 1.0e-6)
+  
+  idx = 0
+  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
+    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      self.p.set(i, j, p_vec[idx])
+      idx = idx + 1
+    }
+  }
+
+  // 3. 速度修正
+  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
+    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      let p_grad = self.p.grad(i, j)
+      self.u.set(i, j, u_star.at(i, j) - dt * p_grad.0)
+      self.v.set(i, j, v_star.at(i, j) - dt * p_grad.1)
+    }
+  }
+}
 // 主函数：示例运行
 fn main() {
     var solver = new CavitySolver(50, 50, 1.0, 100.0, 1000, 1e-6)
