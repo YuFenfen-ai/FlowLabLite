@@ -123,6 +123,25 @@ fn CavitySolver::new(nx : Int, ny : Int, length : Double, reynolds : Double, max
   let p = Field::new(mesh)
   { mesh, u, v, p, re: reynolds, max_iter, tol: tolerance }
 }
+// 应用边界条件
+fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
+  // 顶盖：u=1, v=0
+  for i = 0; i < self.mesh.nx; i = i + 1 {
+    self.u.set(i, self.mesh.ny - 1, 1.0)
+    self.v.set(i, self.mesh.ny - 1, 0.0)
+  }
+  // 其他墙面：无滑移
+  for j = 0; j < self.mesh.ny; j = j + 1 {
+    self.u.set(0, j, 0.0)
+    self.u.set(self.mesh.nx - 1, j, 0.0)
+    self.v.set(0, j, 0.0)
+    self.v.set(self.mesh.nx - 1, j, 0.0)
+  }
+  for i = 0; i < self.mesh.nx; i = i + 1 {
+    self.u.set(i, 0, 0.0)
+    self.v.set(i, 0, 0.0)
+  }
+}
 // 主函数：示例运行
 fn main() {
     var solver = new CavitySolver(50, 50, 1.0, 100.0, 1000, 1e-6)
