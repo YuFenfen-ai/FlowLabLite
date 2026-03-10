@@ -107,128 +107,13 @@ fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter :
 }
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
-    var mesh : Mesh2D
-    var u : Field<Float>  // x速度
-    var v : Field<Float>  // y速度
-    var p : Field<Float>  // 压力
-    var Re : Float        // 雷诺数
-    var maxIter : Int
-    var tol : Float
-
-    fn init(nX : Int, nY : Int, length : Float, reynolds : Float, maxIt : Int, tolerance : Float) {
-        mesh = new Mesh2D(nX, nY, length)
-        u = new Field<Float>(mesh)
-        v = new Field<Float>(mesh)
-        p = new Field<Float>(mesh)
-        Re = reynolds
-        maxIter = maxIt
-        tol = tolerance
-    }
-
-    fn initialize() {
-        u.setAll(0.0)
-        v.setAll(0.0)
-        p.setAll(0.0)
-    }
-        fn init(nX : Int, nY : Int, length : Float, reynolds : Float, maxIt : Int, tolerance : Float) {
-            mesh = new Mesh2D(nX, nY, length)
-            u = new Field<Float>(mesh)
-            v = new Field<Float>(mesh)
-            p = new Field<Float>(mesh)
-            Re = reynolds
-            maxIter = maxIt
-            tol = tolerance
-        }
-
-    fn applyBoundaryConditions() {
-        // 顶盖：u=1, v=0
-        for i in 0..mesh.Nx-1 {
-            u.set(i, mesh.Ny-1, 1.0)
-            v.set(i, mesh.Ny-1, 0.0)
-        }
-        // 其他墙面：无滑移
-        for j in 0..mesh.Ny-1 {
-            u.set(0, j, 0.0)
-            u.set(mesh.Nx-1, j, 0.0)
-            v.set(0, j, 0.0)
-            v.set(mesh.Nx-1, j, 0.0)
-        }
-        for i in 0..mesh.Nx-1 {
-            u.set(i, 0, 0.0)
-            v.set(i, 0, 0.0)
-        }
-    }
-
-    fn step() {
-        // SIMPLE算法：预测-修正
-        var dt = 0.001  // 时间步长（稳态中用于松弛）
-        var nu = 1.0 / Re  // 粘性系数
-
-        // 1. 预测速度（显式离散动量方程）
-        var uStar = new Field<Float>(mesh)
-        var vStar = new Field<Float>(mesh)
-        for i in 1..mesh.Nx-2 {
-            for j in 1..mesh.Ny-2 {
-                // 对流+扩散项（简化中心差分）
-                var convU = u.at(i,j) * (u.at(i+1,j) - u.at(i-1,j)) / (2*mesh.dx) +
-                            v.at(i,j) * (u.at(i,j+1) - u.at(i,j-1)) / (2*mesh.dy)
-                var diffU = nu * ((u.at(i+1,j) - 2*u.at(i,j) + u.at(i-1,j))/(mesh.dx*mesh.dx) +
-                                  (u.at(i,j+1) - 2*u.at(i,j) + u.at(i,j-1))/(mesh.dy*mesh.dy))
-                uStar.set(i,j, u.at(i,j) + dt * (-convU + diffU - p.grad(i,j).0))
-
-                var convV = u.at(i,j) * (v.at(i+1,j) - v.at(i-1,j)) / (2*mesh.dx) +
-                            v.at(i,j) * (v.at(i,j+1) - v.at(i,j-1)) / (2*mesh.dy)
-                var diffV = nu * ((v.at(i+1,j) - 2*v.at(i,j) + v.at(i-1,j))/(mesh.dx*mesh.dx) +
-                                  (v.at(i,j+1) - 2*v.at(i,j) + v.at(i,j-1))/(mesh.dy*mesh.dy))
-                vStar.set(i,j, v.at(i,j) + dt * (-convV + diffV - p.grad(i,j).1))
-            }
-        }
-
-        // 2. 压力泊松方程
-        var A = new Matrix(mesh.Nx*mesh.Ny, mesh.Nx*mesh.Ny)
-        var b = new Float[mesh.Nx*mesh.Ny]
-        var idx = 0
-        for i in 1..mesh.Nx-2 {
-            for j in 1..mesh.Ny-2 {
-                var coeff = -2/(mesh.dx*mesh.dx) - 2/(mesh.dy*mesh.dy)
-                A.set(idx, idx, coeff)
-                if i > 0 { A.set(idx, idx-1, 1/(mesh.dx*mesh.dx)) }
-                if i < mesh.Nx-1 { A.set(idx, idx+1, 1/(mesh.dx*mesh.dx)) }
-                if j > 0 { A.set(idx, idx-mesh.Nx, 1/(mesh.dy*mesh.dy)) }
-                if j < mesh.Ny-1 { A.set(idx, idx+mesh.Nx, 1/(mesh.dy*mesh.dy)) }
-                b[idx] = (uStar.at(i+1,j) - uStar.at(i-1,j))/(2*mesh.dx) +
-                         (vStar.at(i,j+1) - vStar.at(i,j-1))/(2*mesh.dy)
-                idx += 1
-            }
-        }
-        var pVec = new Float[mesh.Nx*mesh.Ny]
-        A.solve(b, pVec, 100, 1e-6)
-        idx = 0
-        for i in 1..mesh.Nx-2 {
-            for j in 1..mesh.Ny-2 {
-                p.set(i,j, pVec[idx])
-                idx += 1
-            }
-        }
-
-        // 3. 速度修正
-        for i in 1..mesh.Nx-2 {
-            for j in 1..mesh.Ny-2 {
-                u.set(i,j, uStar.at(i,j) - dt * p.grad(i,j).0)
-                v.set(i,j, vStar.at(i,j) - dt * p.grad(i,j).1)
-            }
-        }
-    }
-
-    fn run() -> (Field<Float>, Field<Float>, Field<Float>) {
-        initialize()
-        applyBoundaryConditions()
-        for iter in 0..maxIter-1 {
-            step()
-            applyBoundaryConditions()
-        }
-        return (u, v, p)
-    }
+  mesh : Mesh2D
+  mut u : Field[Double]  // x速度
+  mut v : Field[Double]  // y速度
+  mut p : Field[Double]  // 压力
+  re : Double        // 雷诺数
+  max_iter : Int
+  tol : Double
 }
 
 // 主函数：示例运行
