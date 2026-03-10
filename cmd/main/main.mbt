@@ -217,6 +217,16 @@ fn CavitySolver::step(self : CavitySolver) -> Unit {
     }
   }
 }
+// 运行求解器
+fn CavitySolver::run(self : CavitySolver) -> (Field[Double], Field[Double], Field[Double]) {
+  self.initialize()
+  self.apply_boundary_conditions()
+  for iter = 0; iter < self.max_iter; iter = iter + 1 {
+    self.step()
+    self.apply_boundary_conditions()
+  }
+  (self.u, self.v, self.p)
+}
 // 主函数：示例运行
 fn main() {
     var solver = new CavitySolver(50, 50, 1.0, 100.0, 1000, 1e-6)
