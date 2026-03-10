@@ -115,7 +115,14 @@ struct CavitySolver {
   max_iter : Int
   tol : Double
 }
-
+// CavitySolver的构造函数
+fn CavitySolver::new(nx : Int, ny : Int, length : Double, reynolds : Double, max_iter : Int, tolerance : Double) -> CavitySolver {
+  let mesh = Mesh2D::new(nx, ny, length)
+  let u = Field::new(mesh)
+  let v = Field::new(mesh)
+  let p = Field::new(mesh)
+  { mesh, u, v, p, re: reynolds, max_iter, tol: tolerance }
+}
 // 主函数：示例运行
 fn main() {
     var solver = new CavitySolver(50, 50, 1.0, 100.0, 1000, 1e-6)
