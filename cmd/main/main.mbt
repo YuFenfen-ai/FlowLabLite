@@ -242,20 +242,26 @@ fn main {
 }
 
 // 导出函数供Web调用（假设编译到WASM）
-pub fn runSimulation(nX : Int, nY : Int, L : Float, Re : Float, maxIter : Int, tol : Float) -> String {
-    var solver = new CavitySolver(nX, nY, L, Re, maxIter, tol)
-    var (u, v, p) = solver.run()
+pub fn run_simulation(nx : Int, ny : Int, l : Double, re : Double, max_iter : Int, tol : Double) -> String {
+    let solver = CavitySolver::new(nx, ny, l, re, max_iter, tol)
+    let (u, v, p) = solver.run()
     // 序列化为JSON字符串供JS解析
-    var result = "{ \"u\": ["
-    for i in 0..nX-1 {
-        result += "["
-        for j in 0..nY-1 {
-            result += to_string(u.at(i,j))
-            if j < nY-2 { result += "," }
-        }
-        result += "]"
-        if i < nX-2 { result += "," }
+   
+  // 简化的结果序列化
+  let mut result = "{ \"u\": ["
+  for i = 0; i < nx; i = i + 1 {
+    result = result + "["
+    for j = 0; j < ny; j = j + 1 {
+      result = result + u.at(i, j).to_string()
+      if j < ny - 1 { 
+        result = result + "," 
+      }
     }
-    result += "], \"v\": [/* similar */], \"p\": [/* similar */] }"
-    return result
+    result = result + "]"
+    if i < nx - 1 { 
+      result = result + "," 
+    }
+  }
+  result = result + "], \"v\": [/* similar */], \"p\": [/* similar */] }"
+  result
 }
