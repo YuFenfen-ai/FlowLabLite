@@ -230,7 +230,7 @@ fn CavitySolver::run(self : CavitySolver) -> (Field[Double], Field[Double], Fiel
 // 主函数：示例运行
 fn main() {
     let solver = CavitySolver::new(50, 50, 1.0, 100.0, 1000, 1.0e-6)
-    var (u, v, p) = solver.run()
+    let (u, v, p = solver.run()
     println("Simulation complete. Fields ready for visualization.")
     // 在Web应用中，可导出u, v, p数据到JS
 }
