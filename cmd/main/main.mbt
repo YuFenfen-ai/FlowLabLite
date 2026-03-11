@@ -123,6 +123,12 @@ fn CavitySolver::new(nx : Int, ny : Int, length : Double, reynolds : Double, max
   let p = Field::new(mesh)
   { mesh, u, v, p, re: reynolds, max_iter, tol: tolerance }
 }
+// 初始化场
+fn CavitySolver::initialize(self : CavitySolver) -> Unit {
+  self.u.set_all(0.0)
+  self.v.set_all(0.0)
+  self.p.set_all(0.0)
+}
 // 应用边界条件
 fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
   // 顶盖：u=1, v=0
