@@ -67,7 +67,7 @@ fn Field::div(self : Field[Double], i : Int, j : Int) -> Double {
 struct Matrix {
   rows : Int
   cols : Int
-  mut data : Array[Array[Double]]
+  data : Array[Array[Double]]
 }
 // Matrix的构造函数
 fn Matrix::new(rows : Int, cols : Int) -> Matrix {
