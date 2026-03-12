@@ -98,8 +98,9 @@ fn Matrix::at(self : Matrix, i : Int, j : Int) -> Double {
   self.data[i][j]
 }
 
-// 简单高斯-赛德尔求解器
+// 简单高斯-赛德尔求解器 - 添加残差信息输出
 fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter : Int, tol : Double) -> Unit {
+  println("  Starting pressure equation solver...")
   for iter = 0; iter < max_iter; iter = iter + 1 {
     let mut max_err = 0.0
     for i = 0; i < self.rows; i = i + 1 {
@@ -116,7 +117,14 @@ fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter :
       }
       x[i] = new_x
     }
+    
+    // 每10步或收敛时输出残差信息
+    if iter % 10 == 0 || max_err < tol {
+      println("    Pressure solver iter \{iter}: residual = \{max_err}")
+    }
+    
     if max_err < tol { 
+      println("    Pressure solver converged in \{iter + 1} iterations")
       break 
     }
   }
@@ -169,10 +177,10 @@ fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
   }
 }
 
-// SIMPLE算法的一个时间步
+// SIMPLE算法的一个时间步 - 添加残差计算和输出
 fn CavitySolver::step(self : CavitySolver) -> Unit {
-  let dt = 0.001  // 时间步长（稳态中用于松弛）
-  let nu = 1.0 / self.re  // 粘性系数
+  let dt = 0.001
+  let nu = 1.0 / self.re
 
   // 1. 预测速度（显式离散动量方程）
   let u_star = Field::new_double(self.mesh)
@@ -196,60 +204,53 @@ fn CavitySolver::step(self : CavitySolver) -> Unit {
     }
   }
 
-  // 2. 压力泊松方程 - 修正矩阵大小和索引计算
-  let interior_nx = self.mesh.nx - 2  // 内部点数（排除边界）
+  // 2. 压力泊松方程
+  let interior_nx = self.mesh.nx - 2
   let interior_ny = self.mesh.ny - 2
   let matrix_size = interior_nx * interior_ny
   let a_matrix = Matrix::new(matrix_size, matrix_size)
   let b_vec = Array::make(matrix_size, 0.0)
   
-  // 定义从(i,j)到矩阵索引的转换函数
   fn get_matrix_index(i : Int, j : Int, nx : Int) -> Int {
-    (i - 1) * (nx - 2) + (j - 1)  // 减1是因为内部点从1开始
+    (i - 1) * (nx - 2) + (j - 1)
   }
   
   for i = 1; i < self.mesh.nx - 1; i = i + 1 {
     for j = 1; j < self.mesh.ny - 1; j = j + 1 {
       let idx = get_matrix_index(i, j, self.mesh.nx)
       
-      // 对角元素系数
       let coeff = -2.0 / (self.mesh.dx * self.mesh.dx) - 2.0 / (self.mesh.dy * self.mesh.dy)
       a_matrix.set(idx, idx, coeff)
       
-      // 相邻元素系数
-      if i > 1 {  // 左邻居存在
+      if i > 1 {
         let left_idx = get_matrix_index(i - 1, j, self.mesh.nx)
         a_matrix.set(idx, left_idx, 1.0 / (self.mesh.dx * self.mesh.dx))
       }
-      if i < self.mesh.nx - 2 {  // 右邻居存在
+      if i < self.mesh.nx - 2 {
         let right_idx = get_matrix_index(i + 1, j, self.mesh.nx)
         a_matrix.set(idx, right_idx, 1.0 / (self.mesh.dx * self.mesh.dx))
       }
-      if j > 1 {  // 下邻居存在
+      if j > 1 {
         let bottom_idx = get_matrix_index(i, j - 1, self.mesh.nx)
         a_matrix.set(idx, bottom_idx, 1.0 / (self.mesh.dy * self.mesh.dy))
       }
-      if j < self.mesh.ny - 2 {  // 上邻居存在
+      if j < self.mesh.ny - 2 {
         let top_idx = get_matrix_index(i, j + 1, self.mesh.nx)
         a_matrix.set(idx, top_idx, 1.0 / (self.mesh.dy * self.mesh.dy))
       }
       
-      // 右端项
       b_vec[idx] = (u_star.at(i + 1, j) - u_star.at(i - 1, j)) / (2.0 * self.mesh.dx) +
                    (v_star.at(i, j + 1) - v_star.at(i, j - 1)) / (2.0 * self.mesh.dy)
-
     }
   }
   
   let p_vec = Array::make(matrix_size, 0.0)
   a_matrix.solve(b_vec, p_vec, 100, 1.0e-6)
   
-  // 将解向量映射回压力场
   for i = 1; i < self.mesh.nx - 1; i = i + 1 {
     for j = 1; j < self.mesh.ny - 1; j = j + 1 {
       let idx = get_matrix_index(i, j, self.mesh.nx)
       self.p.set(i, j, p_vec[idx])
-
     }
   }
 
@@ -263,30 +264,128 @@ fn CavitySolver::step(self : CavitySolver) -> Unit {
   }
 }
 
-// 运行求解器
+// 计算速度场残差的辅助函数
+fn CavitySolver::calculate_velocity_residual(self : CavitySolver, u_old : Field[Double], v_old : Field[Double]) -> Double {
+  let mut max_u_residual = 0.0
+  let mut max_v_residual = 0.0
+  
+  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
+    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      let u_diff = if self.u.at(i, j) - u_old.at(i, j) > 0.0 { 
+        self.u.at(i, j) - u_old.at(i, j) 
+      } else { 
+        u_old.at(i, j) - self.u.at(i, j) 
+      }
+      let v_diff = if self.v.at(i, j) - v_old.at(i, j) > 0.0 { 
+        self.v.at(i, j) - v_old.at(i, j) 
+      } else { 
+        v_old.at(i, j) - self.v.at(i, j) 
+      }
+      
+      if u_diff > max_u_residual { max_u_residual = u_diff }
+      if v_diff > max_v_residual { max_v_residual = v_diff }
+    }
+  }
+  
+  if max_u_residual > max_v_residual { max_u_residual } else { max_v_residual }
+}
+
+// 计算连续性方程残差
+fn CavitySolver::calculate_continuity_residual(self : CavitySolver) -> Double {
+  let mut max_div = 0.0
+  
+  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
+    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      let div_u = (self.u.at(i + 1, j) - self.u.at(i - 1, j)) / (2.0 * self.mesh.dx) +
+                  (self.v.at(i, j + 1) - self.v.at(i, j - 1)) / (2.0 * self.mesh.dy)
+      let abs_div = if div_u > 0.0 { div_u } else { -div_u }
+      if abs_div > max_div { max_div = abs_div }
+    }
+  }
+  
+  max_div
+}
+
+// 运行求解器 - 添加详细的迭代信息输出
 fn CavitySolver::run(self : CavitySolver) -> (Field[Double], Field[Double], Field[Double]) {
+  println("Starting SIMPLE algorithm solver...")
+  println("Grid: \{self.mesh.nx}x\{self.mesh.ny}, Re = \{self.re}")
+  println("Max iterations: \{self.max_iter}, Tolerance: \{self.tol}")
+  println("")
+  
   self.initialize()
   self.apply_boundary_conditions()
+  
   for iter = 0; iter < self.max_iter; iter = iter + 1 {
+    // 保存上一步的速度场用于计算残差
+    let u_old = Field::new_double(self.mesh)
+    let v_old = Field::new_double(self.mesh)
+    
+    // 复制当前速度场
+    for i = 0; i < self.mesh.nx; i = i + 1 {
+      for j = 0; j < self.mesh.ny; j = j + 1 {
+        u_old.set(i, j, self.u.at(i, j))
+        v_old.set(i, j, self.v.at(i, j))
+      }
+    }
+    
+    println("SIMPLE iteration \{iter + 1}:")
+    
     self.step()
     self.apply_boundary_conditions()
+    
+    // 计算残差
+    let velocity_residual = self.calculate_velocity_residual(u_old, v_old)
+    let continuity_residual = self.calculate_continuity_residual()
+    
+    println("  Velocity residual: \{velocity_residual}")
+    println("  Continuity residual: \{continuity_residual}")
+    
+    // 检查收敛性
+    let overall_residual = if velocity_residual > continuity_residual { 
+      velocity_residual 
+    } else { 
+      continuity_residual 
+    }
+    
+    if overall_residual < self.tol {
+      println("")
+      println("*** CONVERGED in \{iter + 1} iterations ***")
+      println("Final residual: \{overall_residual}")
+      break
+    }
+    
+    // 每10步输出一次进度
+    if (iter + 1) % 10 == 0 {
+      println("  Progress: \{iter + 1}/\{self.max_iter} iterations completed")
+    }
+    
+    println("")
   }
+  
+  println("Simulation complete. Fields ready for visualization.")
   (self.u, self.v, self.p)
 }
 
-// 主函数：示例运行
+// 主函数：示例运行 - 调整参数以便观察收敛过程
 fn main {
-  let solver = CavitySolver::new(50, 50, 1.0, 100.0, 1000, 1.0e-6)
+  // 使用较小的网格和较少的迭代次数来快速看到收敛过程
+  let solver = CavitySolver::new(20, 20, 1.0, 100.0, 100, 1.0e-4)
   let (u, v, p) = solver.run()
-  println("Simulation complete. Fields ready for visualization.")
-
+  
+  // 输出一些关键位置的结果
+  println("")
+  println("=== Final Results ===")
+  let mid_i = solver.mesh.nx / 2
+  let mid_j = solver.mesh.ny / 2
+  println("Velocity at center (\{mid_i}, \{mid_j}): u = \{u.at(mid_i, mid_j)}, v = \{v.at(mid_i, mid_j)}")
+  println("Pressure at center: p = \{p.at(mid_i, mid_j)}")
 }
 
 // 导出函数供Web调用（假设编译到WASM）
 pub fn run_simulation(nx : Int, ny : Int, l : Double, re : Double, max_iter : Int, tol : Double) -> String {
   let solver = CavitySolver::new(nx, ny, l, re, max_iter, tol)
   let (u, v, p) = solver.run()
-
   
   // 简化的结果序列化
   let mut result = "{ \"u\": ["
