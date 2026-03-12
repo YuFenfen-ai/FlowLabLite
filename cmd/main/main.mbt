@@ -108,7 +108,7 @@ fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter :
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
   mesh : Mesh2D
-  mut u : Field[Double]  // x速度
+  u : Field[Double]  // x速度
   mut v : Field[Double]  // y速度
   mut p : Field[Double]  // 压力
   re : Double        // 雷诺数
