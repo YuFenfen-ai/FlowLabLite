@@ -6,7 +6,7 @@
 // 可读性/可维护性：模块化设计，清晰注释
 // 易用性：简单接口，参数化配置
 
-/// 网格类：结构化正交网格
+// 网格类：结构化正交网格
 struct Mesh2D {
   nx : Int
   ny : Int
@@ -14,26 +14,34 @@ struct Mesh2D {
   dx : Double
   dy : Double
 }
+
 // Mesh2D的构造函数
 fn Mesh2D::new(nx : Int, ny : Int, length : Double) -> Mesh2D {
   let dx = length / (nx - 1).to_double()
   let dy = length / (ny - 1).to_double()
   { nx, ny, l: length, dx, dy }
 }
+
 // 获取单元中心坐标
 fn Mesh2D::cell_center(self : Mesh2D, i : Int, j : Int) -> (Double, Double) {
   (i.to_double() * self.dx, j.to_double() * self.dy)
 }
+
 // 场类：模拟volScalarField/volVectorField
 struct Field[T] {
   mesh : Mesh2D
   data : Array[Array[T]]
 }
-// Field的构造函数
-fn Field::new[T : Default](mesh : Mesh2D) -> Field[T] {
-  let data = Array::make(mesh.nx, Array::make(mesh.ny, T::default()))
+
+// Field的构造函数 - 特化为Double类型
+fn Field::new_double(mesh : Mesh2D) -> Field[Double] {
+  let data = Array::make(mesh.nx, Array::make(mesh.ny, 0.0))
+  for i = 0; i < mesh.nx; i = i + 1 {
+    data[i] = Array::make(mesh.ny, 0.0)
+  }
   { mesh, data }
 }
+
 // 设置所有值
 fn Field::set_all[T](self : Field[T], value : T) -> Unit {
   for i = 0; i < self.mesh.nx; i = i + 1 {
@@ -42,20 +50,24 @@ fn Field::set_all[T](self : Field[T], value : T) -> Unit {
     }
   }
 }
+
 // 获取指定位置的值
 fn Field::at[T](self : Field[T], i : Int, j : Int) -> T {
   self.data[i][j]
 }
+
 // 设置指定位置的值
 fn Field::set[T](self : Field[T], i : Int, j : Int, value : T) -> Unit {
   self.data[i][j] = value
 }
+
 // 梯度算子（有限体积）- 仅适用于Double类型
 fn Field::grad(self : Field[Double], i : Int, j : Int) -> (Double, Double) {
   let gx = (self.data[i + 1][j] - self.data[i - 1][j]) / (2.0 * self.mesh.dx)
   let gy = (self.data[i][j + 1] - self.data[i][j - 1]) / (2.0 * self.mesh.dy)
   (gx, gy)
 }
+
 // 散度算子 - 仅适用于Double类型
 fn Field::div(self : Field[Double], i : Int, j : Int) -> Double {
   let dx = (self.data[i + 1][j] - self.data[i - 1][j]) / (2.0 * self.mesh.dx)
@@ -69,19 +81,23 @@ struct Matrix {
   cols : Int
   data : Array[Array[Double]]
 }
+
 // Matrix的构造函数
 fn Matrix::new(rows : Int, cols : Int) -> Matrix {
   let data = Array::make(rows, Array::make(cols, 0.0))
   { rows, cols, data }
 }
+
 // 设置矩阵元素值
 fn Matrix::set(self : Matrix, i : Int, j : Int, value : Double) -> Unit {
   self.data[i][j] = value
 }
+
 // 获取矩阵元素值
 fn Matrix::at(self : Matrix, i : Int, j : Int) -> Double {
   self.data[i][j]
 }
+
 // 简单高斯-赛德尔求解器
 fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter : Int, tol : Double) -> Unit {
   for iter = 0; iter < max_iter; iter = iter + 1 {
@@ -105,6 +121,7 @@ fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter :
     }
   }
 }
+
 // 求解器类：封装SIMPLE算法
 struct CavitySolver {
   mesh : Mesh2D
@@ -115,20 +132,23 @@ struct CavitySolver {
   max_iter : Int
   tol : Double
 }
+
 // CavitySolver的构造函数
 fn CavitySolver::new(nx : Int, ny : Int, length : Double, reynolds : Double, max_iter : Int, tolerance : Double) -> CavitySolver {
   let mesh = Mesh2D::new(nx, ny, length)
-  let u = Field::new(mesh)
-  let v = Field::new(mesh)
-  let p = Field::new(mesh)
+  let u = Field::new_double(mesh)
+  let v = Field::new_double(mesh)
+  let p = Field::new_double(mesh)
   { mesh, u, v, p, re: reynolds, max_iter, tol: tolerance }
 }
+
 // 初始化场
 fn CavitySolver::initialize(self : CavitySolver) -> Unit {
   self.u.set_all(0.0)
   self.v.set_all(0.0)
   self.p.set_all(0.0)
 }
+
 // 应用边界条件
 fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
   // 顶盖：u=1, v=0
@@ -148,14 +168,15 @@ fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
     self.v.set(i, 0, 0.0)
   }
 }
+
 // SIMPLE算法的一个时间步
 fn CavitySolver::step(self : CavitySolver) -> Unit {
   let dt = 0.001  // 时间步长（稳态中用于松弛）
   let nu = 1.0 / self.re  // 粘性系数
 
   // 1. 预测速度（显式离散动量方程）
-  let u_star = Field::new(self.mesh)
-  let v_star = Field::new(self.mesh)
+  let u_star = Field::new_double(self.mesh)
+  let v_star = Field::new_double(self.mesh)
   
   for i = 1; i < self.mesh.nx - 1; i = i + 1 {
     for j = 1; j < self.mesh.ny - 1; j = j + 1 {
@@ -175,42 +196,60 @@ fn CavitySolver::step(self : CavitySolver) -> Unit {
     }
   }
 
-  // 2. 压力泊松方程
-  let matrix_size = self.mesh.nx * self.mesh.ny
+  // 2. 压力泊松方程 - 修正矩阵大小和索引计算
+  let interior_nx = self.mesh.nx - 2  // 内部点数（排除边界）
+  let interior_ny = self.mesh.ny - 2
+  let matrix_size = interior_nx * interior_ny
   let a_matrix = Matrix::new(matrix_size, matrix_size)
   let b_vec = Array::make(matrix_size, 0.0)
-  let mut idx = 0
+  
+  // 定义从(i,j)到矩阵索引的转换函数
+  fn get_matrix_index(i : Int, j : Int, nx : Int) -> Int {
+    (i - 1) * (nx - 2) + (j - 1)  // 减1是因为内部点从1开始
+  }
   
   for i = 1; i < self.mesh.nx - 1; i = i + 1 {
     for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      let idx = get_matrix_index(i, j, self.mesh.nx)
+      
+      // 对角元素系数
       let coeff = -2.0 / (self.mesh.dx * self.mesh.dx) - 2.0 / (self.mesh.dy * self.mesh.dy)
       a_matrix.set(idx, idx, coeff)
-      if i > 0 { 
-        a_matrix.set(idx, idx - 1, 1.0 / (self.mesh.dx * self.mesh.dx)) 
+      
+      // 相邻元素系数
+      if i > 1 {  // 左邻居存在
+        let left_idx = get_matrix_index(i - 1, j, self.mesh.nx)
+        a_matrix.set(idx, left_idx, 1.0 / (self.mesh.dx * self.mesh.dx))
       }
-      if i < self.mesh.nx - 1 { 
-        a_matrix.set(idx, idx + 1, 1.0 / (self.mesh.dx * self.mesh.dx)) 
+      if i < self.mesh.nx - 2 {  // 右邻居存在
+        let right_idx = get_matrix_index(i + 1, j, self.mesh.nx)
+        a_matrix.set(idx, right_idx, 1.0 / (self.mesh.dx * self.mesh.dx))
       }
-      if j > 0 { 
-        a_matrix.set(idx, idx - self.mesh.nx, 1.0 / (self.mesh.dy * self.mesh.dy)) 
+      if j > 1 {  // 下邻居存在
+        let bottom_idx = get_matrix_index(i, j - 1, self.mesh.nx)
+        a_matrix.set(idx, bottom_idx, 1.0 / (self.mesh.dy * self.mesh.dy))
       }
-      if j < self.mesh.ny - 1 { 
-        a_matrix.set(idx, idx + self.mesh.nx, 1.0 / (self.mesh.dy * self.mesh.dy)) 
+      if j < self.mesh.ny - 2 {  // 上邻居存在
+        let top_idx = get_matrix_index(i, j + 1, self.mesh.nx)
+        a_matrix.set(idx, top_idx, 1.0 / (self.mesh.dy * self.mesh.dy))
       }
+      
+      // 右端项
       b_vec[idx] = (u_star.at(i + 1, j) - u_star.at(i - 1, j)) / (2.0 * self.mesh.dx) +
                    (v_star.at(i, j + 1) - v_star.at(i, j - 1)) / (2.0 * self.mesh.dy)
-      idx = idx + 1
+
     }
   }
   
   let p_vec = Array::make(matrix_size, 0.0)
   a_matrix.solve(b_vec, p_vec, 100, 1.0e-6)
   
-  idx = 0
+  // 将解向量映射回压力场
   for i = 1; i < self.mesh.nx - 1; i = i + 1 {
     for j = 1; j < self.mesh.ny - 1; j = j + 1 {
+      let idx = get_matrix_index(i, j, self.mesh.nx)
       self.p.set(i, j, p_vec[idx])
-      idx = idx + 1
+
     }
   }
 
@@ -223,6 +262,7 @@ fn CavitySolver::step(self : CavitySolver) -> Unit {
     }
   }
 }
+
 // 运行求解器
 fn CavitySolver::run(self : CavitySolver) -> (Field[Double], Field[Double], Field[Double]) {
   self.initialize()
@@ -233,20 +273,21 @@ fn CavitySolver::run(self : CavitySolver) -> (Field[Double], Field[Double], Fiel
   }
   (self.u, self.v, self.p)
 }
+
 // 主函数：示例运行
 fn main {
-    let solver = CavitySolver::new(50, 50, 1.0, 100.0, 1000, 1.0e-6)
-    let (u, v, p) = solver.run()
-    println("Simulation complete. Fields ready for visualization.")
-    // 在Web应用中，可导出u, v, p数据到JS
+  let solver = CavitySolver::new(50, 50, 1.0, 100.0, 1000, 1.0e-6)
+  let (u, v, p) = solver.run()
+  println("Simulation complete. Fields ready for visualization.")
+
 }
 
 // 导出函数供Web调用（假设编译到WASM）
 pub fn run_simulation(nx : Int, ny : Int, l : Double, re : Double, max_iter : Int, tol : Double) -> String {
-    let solver = CavitySolver::new(nx, ny, l, re, max_iter, tol)
-    let (u, v, p) = solver.run()
-    // 序列化为JSON字符串供JS解析
-   
+  let solver = CavitySolver::new(nx, ny, l, re, max_iter, tol)
+  let (u, v, p) = solver.run()
+
+  
   // 简化的结果序列化
   let mut result = "{ \"u\": ["
   for i = 0; i < nx; i = i + 1 {
