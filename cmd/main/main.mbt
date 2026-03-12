@@ -27,7 +27,7 @@ fn Mesh2D::cell_center(self : Mesh2D, i : Int, j : Int) -> (Double, Double) {
 // 场类：模拟volScalarField/volVectorField
 struct Field[T] {
   mesh : Mesh2D
-  mut data : Array[Array[T]]
+  data : Array[Array[T]]
 }
 // Field的构造函数
 fn Field::new[T : Default](mesh : Mesh2D) -> Field[T] {
