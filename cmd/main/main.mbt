@@ -110,7 +110,7 @@ struct CavitySolver {
   mesh : Mesh2D
   u : Field[Double]  // x速度
   v : Field[Double]  // y速度
-  mut p : Field[Double]  // 压力
+  p : Field[Double]  // 压力
   re : Double        // 雷诺数
   max_iter : Int
   tol : Double
