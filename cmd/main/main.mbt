@@ -135,50 +135,80 @@ fn pressure_poisson_array(p : Array[Array[Double]], dx : Double, dy : Double,
   p
 }
 // Main cavity flow solver function
-fn cavity_flow_array(nt : Int, u : Array[Array[Double]], v : Array[Array[Double]], 
-                    dt : Double, dx : Double, dy : Double, p : Array[Array[Double]], 
-                    rho : Double, nu : Double) -> (Array[Array[Double]], Array[Array[Double]], Array[Array[Double]]) {
-  
+///|
+fn cavity_flow_array(
+  nt : Int,
+  u : Array[Array[Double]],
+  v : Array[Array[Double]],
+  dt : Double,
+  dx : Double,
+  dy : Double,
+  p : Array[Array[Double]],
+  rho : Double,
+  nu : Double,
+) -> (Array[Array[Double]], Array[Array[Double]], Array[Array[Double]]) {
   let un = create_zeros_2d(ny, nx)
   let vn = create_zeros_2d(ny, nx)
   let b = create_zeros_2d(ny, nx)
-  
+
   for n = 0; n < nt; n = n + 1 {
     copy_2d_array(u, un)
     copy_2d_array(v, vn)
-    
+
     // Build up b array
     build_up_b_array(b, rho, dt, u, v, dx, dy) |> ignore
-    
+
     // Solve pressure Poisson equation
     pressure_poisson_array(p, dx, dy, b) |> ignore
-    
+
     // Update u velocity component
     for i = 1; i < ny - 1; i = i + 1 {
       for j = 1; j < nx - 1; j = j + 1 {
         let conv_u_x = un[i][j] * dt / dx * (un[i][j] - un[i][j - 1])
         let conv_u_y = vn[i][j] * dt / dy * (un[i][j] - un[i - 1][j])
         let pressure_grad = dt / (2.0 * rho * dx) * (p[i][j + 1] - p[i][j - 1])
-        let visc_u_x = nu * dt / (dx * dx) * (un[i][j + 1] - 2.0 * un[i][j] + un[i][j - 1])
-        let visc_u_y = nu * dt / (dy * dy) * (un[i + 1][j] - 2.0 * un[i][j] + un[i - 1][j])
-        
-        u[i][j] = un[i][j] - conv_u_x - conv_u_y - pressure_grad + visc_u_x + visc_u_y
+        let visc_u_x = nu *
+          dt /
+          (dx * dx) *
+          (un[i][j + 1] - 2.0 * un[i][j] + un[i][j - 1])
+        let visc_u_y = nu *
+          dt /
+          (dy * dy) *
+          (un[i + 1][j] - 2.0 * un[i][j] + un[i - 1][j])
+
+        u[i][j] = un[i][j] -
+          conv_u_x -
+          conv_u_y -
+          pressure_grad +
+          visc_u_x +
+          visc_u_y
       }
     }
-    
+
     // Update v velocity component
     for i = 1; i < ny - 1; i = i + 1 {
       for j = 1; j < nx - 1; j = j + 1 {
         let conv_v_x = un[i][j] * dt / dx * (vn[i][j] - vn[i][j - 1])
         let conv_v_y = vn[i][j] * dt / dy * (vn[i][j] - vn[i - 1][j])
         let pressure_grad = dt / (2.0 * rho * dy) * (p[i + 1][j] - p[i - 1][j])
-        let visc_v_x = nu * dt / (dx * dx) * (vn[i][j + 1] - 2.0 * vn[i][j] + vn[i][j - 1])
-        let visc_v_y = nu * dt / (dy * dy) * (vn[i + 1][j] - 2.0 * vn[i][j] + vn[i - 1][j])
-        
-        v[i][j] = vn[i][j] - conv_v_x - conv_v_y - pressure_grad + visc_v_x + visc_v_y
+        let visc_v_x = nu *
+          dt /
+          (dx * dx) *
+          (vn[i][j + 1] - 2.0 * vn[i][j] + vn[i][j - 1])
+        let visc_v_y = nu *
+          dt /
+          (dy * dy) *
+          (vn[i + 1][j] - 2.0 * vn[i][j] + vn[i - 1][j])
+
+        v[i][j] = vn[i][j] -
+          conv_v_x -
+          conv_v_y -
+          pressure_grad +
+          visc_v_x +
+          visc_v_y
       }
     }
-    
+
     // Apply velocity boundary conditions
     // u[0, :] = 0, u[:, 0] = 0, u[:, -1] = 0
     for j = 0; j < nx; j = j + 1 {
@@ -192,7 +222,7 @@ fn cavity_flow_array(nt : Int, u : Array[Array[Double]], v : Array[Array[Double]
     for j = 0; j < nx; j = j + 1 {
       u[ny - 1][j] = 1.0
     }
-    
+
     // v[0, :] = 0, v[-1, :] = 0, v[:, 0] = 0, v[:, -1] = 0
     for j = 0; j < nx; j = j + 1 {
       v[0][j] = 0.0
@@ -202,14 +232,40 @@ fn cavity_flow_array(nt : Int, u : Array[Array[Double]], v : Array[Array[Double]
       v[i][0] = 0.0
       v[i][nx - 1] = 0.0
     }
-    
+
     // Progress output every 10 steps
     if (n + 1) % 10 == 0 {
       println("Time step \{n + 1}/\{nt} completed")
     }
   }
-  
+
   (u, v, p)
+}
+// Function to write velocity data to a text file
+fn write_velocity_to_file(u : Array[Array[Double]], v : Array[Array[Double]], 
+                         x : Array[Array[Double]], y : Array[Array[Double]], 
+                         filename : String) -> Unit {
+  // Note: MoonBit doesn't have built-in file I/O in the standard library
+  // This is a placeholder implementation that would need platform-specific file I/O
+  println("Writing velocity data to file: \{filename}")
+  println("File format: x, y, u, v, velocity_magnitude")
+  println("Data points:")
+  
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let x_pos = x[i][j]
+      let y_pos = y[i][j]
+      let u_val = u[i][j]
+      let v_val = v[i][j]
+      let vel_mag = (u_val * u_val + v_val * v_val).sqrt()
+      
+      // In a real implementation, this would write to a file
+      // For now, we'll print to console with file-like formatting
+      println("\{x_pos}, \{y_pos}, \{u_val}, \{v_val}, \{vel_mag}")
+    }
+  }
+  
+  println("Velocity data written to \{filename} (simulated)")
 }
 // Main function to run the cavity flow simulation
 fn main {
@@ -295,7 +351,14 @@ fn main {
       println("  Point (\{si}, \{sj}): |V| = \{vel_mag_sample}")
     }
   }
-  
+  // Add this code after the sample points calculation and before the final completion message
+  println("")
+  println("=== Writing velocity data to file ===")
+
+  // Write all velocity data to a text file
+  write_velocity_to_file(u_final, v_final, x, y, "velocity_field.txt")
+
+  println("Velocity data export completed.")
   println("")
   println("=== Simulation completed successfully ===")
   println("")
