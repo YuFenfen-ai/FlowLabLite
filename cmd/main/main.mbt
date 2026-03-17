@@ -1,532 +1,309 @@
-// 完整的2D顶盖驱动流求解器，MoonBit语言实现 - 修复数值稳定性问题
-// 参考OpenFOAM数据结构，使用有限体积法和稳态SIMPLE算法
-// 支持不同雷诺数，结构化正交网格，串行实现
-// 可扩展：可添加更多物理模型或网格类型
-// 高性能：使用高效数据结构和算法
-// 可读性/可维护性：模块化设计，清晰注释
-// 易用性：简单接口，参数化配置
-
-// 网格类：结构化正交网格
-struct Mesh2D {
-  nx : Int
-  ny : Int
-  l : Double
-  dx : Double
-  dy : Double
-}
-
-// Mesh2D的构造函数
-fn Mesh2D::new(nx : Int, ny : Int, length : Double) -> Mesh2D {
-  let dx = length / (nx - 1).to_double()
-  let dy = length / (ny - 1).to_double()
-  { nx, ny, l: length, dx, dy }
-}
-
-// 获取单元中心坐标
-fn Mesh2D::cell_center(self : Mesh2D, i : Int, j : Int) -> (Double, Double) {
-  (i.to_double() * self.dx, j.to_double() * self.dy)
-}
-
-// 场类：模拟volScalarField/volVectorField
-struct Field[T] {
-  mesh : Mesh2D
-  data : Array[Array[T]]
-}
-
-// Field的构造函数 - 特化为Double类型
-fn Field::new_double(mesh : Mesh2D) -> Field[Double] {
-  let  data = Array::make(mesh.nx, Array::make(mesh.ny, 0.0))
-  for i = 0; i < mesh.nx; i = i + 1 {
-    data[i] = Array::make(mesh.ny, 0.0)
+// Constants for the simulation
+let nx = 41
+let ny = 41
+let nt = 500
+let nit = 50
+let c = 1.0
+let dx = 2.0 / (nx - 1).to_double()
+let dy = 2.0 / (ny - 1).to_double()
+let rho = 1.0
+let nu = 0.1
+let dt = 0.001
+// Helper function to create 2D array filled with zeros
+fn create_zeros_2d(rows : Int, cols : Int) -> Array[Array[Double]] {
+  let result = Array::make(rows, Array::make(cols, 0.0))
+  for i = 0; i < rows; i = i + 1 {
+    result[i] = Array::make(cols, 0.0)
   }
-  { mesh, data }
-}
-
-// 设置所有值
-fn Field::set_all[T](self : Field[T], value : T) -> Unit {
-  for i = 0; i < self.mesh.nx; i = i + 1 {
-    for j = 0; j < self.mesh.ny; j = j + 1 {
-      self.data[i][j] = value
-    }
-  }
-}
-
-// 获取指定位置的值
-fn Field::at[T](self : Field[T], i : Int, j : Int) -> T {
-  self.data[i][j]
-}
-
-// 设置指定位置的值
-fn Field::set[T](self : Field[T], i : Int, j : Int, value : T) -> Unit {
-  self.data[i][j] = value
-}
-
-// 复制场的值
-fn Field::copy_from[T](self : Field[T], other : Field[T]) -> Unit {
-  for i = 0; i < self.mesh.nx; i = i + 1 {
-    for j = 0; j < self.mesh.ny; j = j + 1 {
-      self.data[i][j] = other.data[i][j]
-    }
-  }
-}
-
-// 梯度算子（有限体积）- 仅适用于Double类型，增加边界检查
-fn Field::grad(self : Field[Double], i : Int, j : Int) -> (Double, Double) {
-  let gx = if i == 0 || i == self.mesh.nx - 1 {
-    0.0  // 边界处梯度设为0
-  } else {
-    (self.data[i + 1][j] - self.data[i - 1][j]) / (2.0 * self.mesh.dx)
-  }
-  
-  let gy = if j == 0 || j == self.mesh.ny - 1 {
-    0.0  // 边界处梯度设为0
-  } else {
-    (self.data[i][j + 1] - self.data[i][j - 1]) / (2.0 * self.mesh.dy)
-  }
-  
-  (gx, gy)
-}
-
-// 散度算子 - 仅适用于Double类型，增加边界检查
-fn Field::div(self : Field[Double], i : Int, j : Int) -> Double {
-  let dx = if i == 0 || i == self.mesh.nx - 1 {
-    0.0
-  } else {
-    (self.data[i + 1][j] - self.data[i - 1][j]) / (2.0 * self.mesh.dx)
-  }
-  
-  let dy = if j == 0 || j == self.mesh.ny - 1 {
-    0.0
-  } else {
-    (self.data[i][j + 1] - self.data[i][j - 1]) / (2.0 * self.mesh.dy)
-  }
-  
-  dx + dy
-}
-
-// 矩阵类：用于线性方程组（压力泊松等）
-struct Matrix {
-  rows : Int
-  cols : Int
-  data : Array[Array[Double]]
-}
-
-// Matrix的构造函数
-fn Matrix::new(rows : Int, cols : Int) -> Matrix {
-  let data = Array::make(rows, Array::make(cols, 0.0))
-  { rows, cols, data }
-}
-
-// 设置矩阵元素值
-fn Matrix::set(self : Matrix, i : Int, j : Int, value : Double) -> Unit {
-  self.data[i][j] = value
-}
-
-// 获取矩阵元素值
-fn Matrix::at(self : Matrix, i : Int, j : Int) -> Double {
-  self.data[i][j]
-}
-
-// 改进的高斯-赛德尔求解器，增加数值稳定性检查
-fn Matrix::solve(self : Matrix, b : Array[Double], x : Array[Double], max_iter : Int, tol : Double) -> Unit {
-  println("  Starting pressure equation solver...")
-  for iter = 0; iter < max_iter; iter = iter + 1 {
-    let mut max_err = 0.0
-    let mut has_nan = false
-    
-    for i = 0; i < self.rows; i = i + 1 {
-      let mut sum = 0.0
-      for j = 0; j < self.cols; j = j + 1 {
-        if j != i {
-          sum = sum + self.data[i][j] * x[j]
-        }
-      }
-      
-      // 检查对角元素是否为零
-      if self.data[i][i].abs() < 1.0e-15 {
-        println("    Warning: Nearly zero diagonal element at \{i}")
-        continue
-      }
-      
-      let new_x = (b[i] - sum) / self.data[i][i]
-      
-      // 检查NaN或无穷大
-      if new_x != new_x || new_x.abs() > 1.0e10 {
-        has_nan = true
-        println("    Warning: NaN or large value detected at iteration \{iter}")
-        break
-      }
-      
-      let err = if new_x - x[i] > 0.0 { new_x - x[i] } else { x[i] - new_x }
-      if err > max_err { 
-        max_err = err 
-      }
-      x[i] = new_x
-    }
-    
-    if has_nan {
-      println("    Pressure solver failed due to numerical instability")
-      break
-    }
-    
-    // 每10步或收敛时输出残差信息
-    if iter % 10 == 0 || max_err < tol {
-      println("    Pressure solver iter \{iter}: residual = \{max_err}")
-    }
-    
-    if max_err < tol { 
-      println("    Pressure solver converged in \{iter + 1} iterations")
-      break 
-    }
-  }
-}
-
-// 求解器类：封装SIMPLE算法，增加松弛因子
-struct CavitySolver {
-  mesh : Mesh2D
-  u : Field[Double]  // x速度
-  v : Field[Double]  // y速度
-  p : Field[Double]  // 压力
-  re : Double        // 雷诺数
-  max_iter : Int
-  tol : Double
-  alpha_u : Double   // 速度松弛因子
-  alpha_p : Double   // 压力松弛因子
-  dt : Double        // 时间步长
-}
-
-// CavitySolver的构造函数，增加松弛因子参数
-fn CavitySolver::new(nx : Int, ny : Int, length : Double, reynolds : Double, max_iter : Int, tolerance : Double) -> CavitySolver {
-  let mesh = Mesh2D::new(nx, ny, length)
-  let u = Field::new_double(mesh)
-  let v = Field::new_double(mesh)
-  let p = Field::new_double(mesh)
-  
-  // 根据雷诺数调整参数
-  let dt = if reynolds > 1000.0 { 0.00001 } else if reynolds > 100.0 { 0.0001 } else { 0.001 }
-  let alpha_u = 0.5  // 速度松弛因子
-  let alpha_p = 0.3  // 压力松弛因子
-  
-  { mesh, u, v, p, re: reynolds, max_iter, tol: tolerance, alpha_u, alpha_p, dt }
-}
-
-// 初始化场 - 使用更好的初始条件
-fn CavitySolver::initialize(self : CavitySolver) -> Unit {
-  // 初始化为小的随机值而不是零，避免数值问题
-  self.u.set_all(1.0e-6)
-  self.v.set_all(1.0e-6)
-  self.p.set_all(0.0)
-  
-  // 设置初始的顶盖速度分布
-  for i = 0; i < self.mesh.nx; i = i + 1 {
-    let x = i.to_double() * self.mesh.dx
-    // 使用平滑的初始分布
-    let u_top = if x < 0.1 || x > 0.9 { 
-      0.5 
-    } else { 
-      1.0 
-    }
-    self.u.set(i, self.mesh.ny - 1, u_top)
-  }
-}
-
-// 应用边界条件
-fn CavitySolver::apply_boundary_conditions(self : CavitySolver) -> Unit {
-  // 顶盖：u=1, v=0 (平滑过渡)
-  for i = 0; i < self.mesh.nx; i = i + 1 {
-    let x = i.to_double() * self.mesh.dx
-    let u_top = if x < 0.05 || x > 0.95 { 
-      0.0 
-    } else { 
-      1.0 
-    }
-    self.u.set(i, self.mesh.ny - 1, u_top)
-    self.v.set(i, self.mesh.ny - 1, 0.0)
-  }
-  
-  // 其他墙面：无滑移
-  for j = 0; j < self.mesh.ny; j = j + 1 {
-    self.u.set(0, j, 0.0)
-    self.u.set(self.mesh.nx - 1, j, 0.0)
-    self.v.set(0, j, 0.0)
-    self.v.set(self.mesh.nx - 1, j, 0.0)
-  }
-  for i = 0; i < self.mesh.nx; i = i + 1 {
-    self.u.set(i, 0, 0.0)
-    self.v.set(i, 0, 0.0)
-  }
-  
-  // 压力边界条件：右上角固定为0作为参考
-  self.p.set(self.mesh.nx - 1, self.mesh.ny - 1, 0.0)
-}
-
-// SIMPLE算法的一个时间步 - 增加数值稳定性
-fn CavitySolver::step(self : CavitySolver) -> Unit {
-  let nu = 1.0 / self.re
-
-  // 1. 预测速度（显式离散动量方程）
-  let u_star = Field::new_double(self.mesh)
-  let v_star = Field::new_double(self.mesh)
-  
-  // 复制当前速度场
-  u_star.copy_from(self.u)
-  v_star.copy_from(self.v)
-  
-  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
-    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
-      // 使用一阶迎风格式处理对流项以增加稳定性
-      let u_face_x = if self.u.at(i, j) > 0.0 { 
-        self.u.at(i, j) 
-      } else { 
-        self.u.at(i + 1, j) 
-      }
-      let u_face_y = if self.v.at(i, j) > 0.0 { 
-        self.u.at(i, j) 
-      } else { 
-        self.u.at(i, j + 1) 
-      }
-      
-      let conv_u = u_face_x * (self.u.at(i + 1, j) - self.u.at(i - 1, j)) / (2.0 * self.mesh.dx) +
-                   u_face_y * (self.u.at(i, j + 1) - self.u.at(i, j - 1)) / (2.0 * self.mesh.dy)
-      
-      let diff_u = nu * ((self.u.at(i + 1, j) - 2.0 * self.u.at(i, j) + self.u.at(i - 1, j)) / (self.mesh.dx * self.mesh.dx) +
-                         (self.u.at(i, j + 1) - 2.0 * self.u.at(i, j) + self.u.at(i, j - 1)) / (self.mesh.dy * self.mesh.dy))
-      
-      let p_grad = self.p.grad(i, j)
-      let u_new = self.u.at(i, j) + self.dt * (-conv_u + diff_u - p_grad.0)
-      
-      // 限制速度变化幅度
-      let du = u_new - self.u.at(i, j)
-      let limited_du = if du.abs() > 0.1 { 
-        if du > 0.0 { 0.1 } else { -0.1 }
-      } else { 
-        du 
-      }
-      u_star.set(i, j, self.u.at(i, j) + limited_du)
-
-      // v速度类似处理
-      let v_face_x = if self.u.at(i, j) > 0.0 { 
-        self.v.at(i, j) 
-      } else { 
-        self.v.at(i + 1, j) 
-      }
-      let v_face_y = if self.v.at(i, j) > 0.0 { 
-        self.v.at(i, j) 
-      } else { 
-        self.v.at(i, j + 1) 
-      }
-      
-      let conv_v = v_face_x * (self.v.at(i + 1, j) - self.v.at(i - 1, j)) / (2.0 * self.mesh.dx) +
-                   v_face_y * (self.v.at(i, j + 1) - self.v.at(i, j - 1)) / (2.0 * self.mesh.dy)
-      
-      let diff_v = nu * ((self.v.at(i + 1, j) - 2.0 * self.v.at(i, j) + self.v.at(i - 1, j)) / (self.mesh.dx * self.mesh.dx) +
-                         (self.v.at(i, j + 1) - 2.0 * self.v.at(i, j) + self.v.at(i, j - 1)) / (self.mesh.dy * self.mesh.dy))
-      
-      let v_new = self.v.at(i, j) + self.dt * (-conv_v + diff_v - p_grad.1)
-      
-      let dv = v_new - self.v.at(i, j)
-      let limited_dv = if dv.abs() > 0.1 { 
-        if dv > 0.0 { 0.1 } else { -0.1 }
-      } else { 
-        dv 
-      }
-      v_star.set(i, j, self.v.at(i, j) + limited_dv)
-    }
-  }
-
-  // 2. 压力泊松方程 - 简化处理
-  let interior_nx = self.mesh.nx - 2
-  let interior_ny = self.mesh.ny - 2
-  
-  if interior_nx > 0 && interior_ny > 0 {
-    // 使用简化的压力修正方程
-    for i = 1; i < self.mesh.nx - 1; i = i + 1 {
-      for j = 1; j < self.mesh.ny - 1; j = j + 1 {
-        let div_u_star = (u_star.at(i + 1, j) - u_star.at(i - 1, j)) / (2.0 * self.mesh.dx) +
-                         (v_star.at(i, j + 1) - v_star.at(i, j - 1)) / (2.0 * self.mesh.dy)
-        
-        // 简单的压力修正
-        let p_correction = -self.alpha_p * div_u_star / self.dt
-        self.p.set(i, j, self.p.at(i, j) + p_correction)
-      }
-    }
-  }
-
-  // 3. 速度修正 - 使用松弛因子
-  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
-    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
-      let p_grad = self.p.grad(i, j)
-      let u_corrected = u_star.at(i, j) - self.dt * p_grad.0
-      let v_corrected = v_star.at(i, j) - self.dt * p_grad.1
-      
-      // 应用松弛因子
-      self.u.set(i, j, self.u.at(i, j) + self.alpha_u * (u_corrected - self.u.at(i, j)))
-      self.v.set(i, j, self.v.at(i, j) + self.alpha_u * (v_corrected - self.v.at(i, j)))
-    }
-  }
-}
-
-// 计算速度场残差的辅助函数
-fn CavitySolver::calculate_velocity_residual(self : CavitySolver, u_old : Field[Double], v_old : Field[Double]) -> Double {
-  let mut max_u_residual = 0.0
-  let mut max_v_residual = 0.0
-  
-  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
-    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
-      let u_diff = if self.u.at(i, j) - u_old.at(i, j) > 0.0 { 
-        self.u.at(i, j) - u_old.at(i, j) 
-      } else { 
-        u_old.at(i, j) - self.u.at(i, j) 
-      }
-      let v_diff = if self.v.at(i, j) - v_old.at(i, j) > 0.0 { 
-        self.v.at(i, j) - v_old.at(i, j) 
-      } else { 
-        v_old.at(i, j) - self.v.at(i, j) 
-      }
-      
-      if u_diff > max_u_residual { max_u_residual = u_diff }
-      if v_diff > max_v_residual { max_v_residual = v_diff }
-    }
-  }
-  
-  if max_u_residual > max_v_residual { max_u_residual } else { max_v_residual }
-}
-
-// 计算连续性方程残差
-fn CavitySolver::calculate_continuity_residual(self : CavitySolver) -> Double {
-  let mut max_div = 0.0
-  
-  for i = 1; i < self.mesh.nx - 1; i = i + 1 {
-    for j = 1; j < self.mesh.ny - 1; j = j + 1 {
-      let div_u = self.u.div(i, j)
-      let abs_div = if div_u > 0.0 { div_u } else { -div_u }
-      if abs_div > max_div { max_div = abs_div }
-    }
-  }
-  
-  max_div
-}
-
-// 运行求解器 - 增加数值稳定性检查
-fn CavitySolver::run(self : CavitySolver) -> (Field[Double], Field[Double], Field[Double]) {
-  println("Starting SIMPLE algorithm solver...")
-  println("Grid: \{self.mesh.nx}x\{self.mesh.ny}, Re = \{self.re}")
-  println("Max iterations: \{self.max_iter}, Tolerance: \{self.tol}")
-  println("Time step: \{self.dt}, Relaxation factors: α_u=\{self.alpha_u}, α_p=\{self.alpha_p}")
-  println("")
-  
-  self.initialize()
-  self.apply_boundary_conditions()
-  
-  for iter = 0; iter < self.max_iter; iter = iter + 1 {
-    // 保存上一步的速度场用于计算残差
-    let u_old = Field::new_double(self.mesh)
-    let v_old = Field::new_double(self.mesh)
-    
-    u_old.copy_from(self.u)
-    v_old.copy_from(self.v)
-    
-    println("SIMPLE iteration \{iter + 1}:")
-    
-    self.step()
-    self.apply_boundary_conditions()
-    
-    // 检查数值稳定性
-    let mut has_nan = false
-    for i = 0; i < self.mesh.nx; i = i + 1 {
-      for j = 0; j < self.mesh.ny; j = j + 1 {
-        let u_val = self.u.at(i, j)
-        let v_val = self.v.at(i, j)
-        let p_val = self.p.at(i, j)
-        if u_val != u_val || v_val != v_val || p_val != p_val || 
-           u_val.abs() > 1.0e6 || v_val.abs() > 1.0e6 || p_val.abs() > 1.0e6 {
-          has_nan = true
-          break
-        }
-      }
-      if has_nan { break }
-    }
-    
-    if has_nan {
-      println("*** SIMULATION FAILED: Numerical instability detected ***")
-      break
-    }
-    
-    // 计算残差
-    let velocity_residual = self.calculate_velocity_residual(u_old, v_old)
-    let continuity_residual = self.calculate_continuity_residual()
-    
-    println("  Velocity residual: \{velocity_residual}")
-    println("  Continuity residual: \{continuity_residual}")
-    
-    // 检查收敛性
-    let overall_residual = if velocity_residual > continuity_residual { 
-      velocity_residual 
-    } else { 
-      continuity_residual 
-    }
-    
-    if overall_residual < self.tol {
-      println("")
-      println("*** CONVERGED in \{iter + 1} iterations ***")
-      println("Final residual: \{overall_residual}")
-      break
-    }
-    
-    // 每5步输出一次进度
-    if (iter + 1) % 5 == 0 {
-      println("  Progress: \{iter + 1}/\{self.max_iter} iterations completed")
-    }
-    
-    println("")
-  }
-  
-  println("Simulation complete. Fields ready for visualization.")
-  (self.u, self.v, self.p)
-}
-
-// 主函数：示例运行 - 使用更保守的参数
-fn main {
-  // 使用更小的网格和更保守的参数
-  let solver = CavitySolver::new(15, 15, 1.0, 10.0, 50, 1.0e-3)
-  let (u, v, p) = solver.run()
-  
-  // 输出一些关键位置的结果
-  println("")
-  println("=== Final Results ===")
-  let mid_i = solver.mesh.nx / 2
-  let mid_j = solver.mesh.ny / 2
-  println("Velocity at center (\{mid_i}, \{mid_j}): u = \{u.at(mid_i, mid_j)}, v = \{v.at(mid_i, mid_j)}")
-  println("Pressure at center: p = \{p.at(mid_i, mid_j)}")
-  
-  // 输出顶盖下方的速度分布
-  println("Top lid velocity profile:")
-  let j_below_lid = solver.mesh.ny - 2
-  for i = 0; i < solver.mesh.nx; i = i + 5 {
-    println("  x=\{i.to_double() * solver.mesh.dx}: u=\{u.at(i, j_below_lid)}")
-  }
-}
-
-// 导出函数供Web调用（假设编译到WASM）
-pub fn run_simulation(nx : Int, ny : Int, l : Double, re : Double, max_iter : Int, tol : Double) -> String {
-  let solver = CavitySolver::new(nx, ny, l, re, max_iter, tol)
-  let (u, v, p) = solver.run()
-  
-  // 简化的结果序列化
-  let mut result = "{ \"u\": ["
-  for i = 0; i < nx; i = i + 1 {
-    result = result + "["
-    for j = 0; j < ny; j = j + 1 {
-      result = result + u.at(i, j).to_string()
-      if j < ny - 1 { 
-        result = result + "," 
-      }
-    }
-    result = result + "]"
-    if i < nx - 1 { 
-      result = result + "," 
-    }
-  }
-  result = result + "], \"v\": [/* similar */], \"p\": [/* similar */] }"
   result
+}
+// Helper function to copy 2D array
+fn copy_2d_array(src : Array[Array[Double]], dst : Array[Array[Double]]) -> Unit {
+  for i = 0; i < src.length(); i = i + 1 {
+    for j = 0; j < src[i].length(); j = j + 1 {
+      dst[i][j] = src[i][j]
+    }
+  }
+}
+// Generate mesh coordinates (equivalent to numpy.linspace and meshgrid)
+fn generate_mesh_grid() -> (Array[Array[Double]], Array[Array[Double]]) {
+  let x_coords = Array::make(nx, 0.0)
+  let y_coords = Array::make(ny, 0.0)
+  
+  // Generate x coordinates (0 to 2)
+  for i = 0; i < nx; i = i + 1 {
+    x_coords[i] = 2.0 * i.to_double() / (nx - 1).to_double()
+  }
+  
+  // Generate y coordinates (0 to 2)
+  for j = 0; j < ny; j = j + 1 {
+    y_coords[j] = 2.0 * j.to_double() / (ny - 1).to_double()
+  }
+  
+  // Create meshgrid - 修正：为每行创建新的数组
+  let X = Array::make(ny, Array::make(nx, 0.0))
+  let Y = Array::make(ny, Array::make(nx, 0.0))
+  
+  for i = 0; i < ny; i = i + 1 {
+    X[i] = Array::make(nx, 0.0)  // 为每行创建新数组
+    Y[i] = Array::make(nx, 0.0)  // 为每行创建新数组
+    for j = 0; j < nx; j = j + 1 {
+      X[i][j] = x_coords[j]
+      Y[i][j] = y_coords[i]
+    }
+  }
+  
+  (X, Y)
+}
+// Build up the b array for pressure Poisson equation
+fn build_up_b_array(b : Array[Array[Double]], rho : Double, dt : Double, 
+                   u : Array[Array[Double]], v : Array[Array[Double]], 
+                   dx : Double, dy : Double) -> Array[Array[Double]] {
+  
+  // Equivalent to b[1:-1, 1:-1] = ... in Python
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      // Calculate velocity divergence terms
+      let du_dx = (u[i][j + 1] - u[i][j - 1]) / (2.0 * dx)
+      let dv_dy = (v[i + 1][j] - v[i - 1][j]) / (2.0 * dy)
+      
+      // Calculate squared terms
+      let du_dx_squared = du_dx * du_dx
+      let dv_dy_squared = dv_dy * dv_dy
+      
+      // Mixed derivative terms
+      let du_dy = (u[i + 1][j] - u[i - 1][j]) / (2.0 * dy)
+      let dv_dx = (v[i][j + 1] - v[i][j - 1]) / (2.0 * dx)
+      let mixed_term = 2.0 * du_dy * dv_dx
+      
+      // Assemble the source term
+      b[i][j] = rho * (
+        (1.0 / dt) * (du_dx + dv_dy) - 
+        du_dx_squared - 
+        mixed_term - 
+        dv_dy_squared
+      )
+    }
+  }
+  
+  b
+}
+// Pressure Poisson equation solver
+fn pressure_poisson_array(p : Array[Array[Double]], dx : Double, dy : Double, 
+                         b : Array[Array[Double]]) -> Array[Array[Double]] {
+  let pn = create_zeros_2d(ny, nx)
+  let dx2 = dx * dx
+  let dy2 = dy * dy
+  let coeff = dx2 * dy2 / (2.0 * (dx2 + dy2))
+  let inv_denom = 1.0 / (2.0 * (dx2 + dy2))
+  
+  for q = 0; q < nit; q = q + 1 {
+    copy_2d_array(p, pn)
+    
+    // Update interior points: p[1:-1, 1:-1] = ...
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        let laplacian = (pn[i][j + 1] + pn[i][j - 1]) * dy2 + 
+                       (pn[i + 1][j] + pn[i - 1][j]) * dx2
+        
+        p[i][j] = laplacian * inv_denom - coeff * b[i][j]
+      }
+    }
+    
+    // Apply boundary conditions
+    // p[:, -1] = p[:, -2]  (dp/dx = 0 at x = 2)
+    for i = 0; i < ny; i = i + 1 {
+      p[i][nx - 1] = p[i][nx - 2]
+    }
+    
+    // p[0, :] = p[1, :]  (dp/dy = 0 at y = 0)
+    for j = 0; j < nx; j = j + 1 {
+      p[0][j] = p[1][j]
+    }
+    
+    // p[:, 0] = p[:, 1]  (dp/dx = 0 at x = 0)
+    for i = 0; i < ny; i = i + 1 {
+      p[i][0] = p[i][1]
+    }
+    
+    // p[-1, :] = 0  (p = 0 at y = 2)
+    for j = 0; j < nx; j = j + 1 {
+      p[ny - 1][j] = 0.0
+    }
+  }
+  
+  p
+}
+// Main cavity flow solver function
+fn cavity_flow_array(nt : Int, u : Array[Array[Double]], v : Array[Array[Double]], 
+                    dt : Double, dx : Double, dy : Double, p : Array[Array[Double]], 
+                    rho : Double, nu : Double) -> (Array[Array[Double]], Array[Array[Double]], Array[Array[Double]]) {
+  
+  let un = create_zeros_2d(ny, nx)
+  let vn = create_zeros_2d(ny, nx)
+  let b = create_zeros_2d(ny, nx)
+  
+  for n = 0; n < nt; n = n + 1 {
+    copy_2d_array(u, un)
+    copy_2d_array(v, vn)
+    
+    // Build up b array
+    build_up_b_array(b, rho, dt, u, v, dx, dy) |> ignore
+    
+    // Solve pressure Poisson equation
+    pressure_poisson_array(p, dx, dy, b) |> ignore
+    
+    // Update u velocity component
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        let conv_u_x = un[i][j] * dt / dx * (un[i][j] - un[i][j - 1])
+        let conv_u_y = vn[i][j] * dt / dy * (un[i][j] - un[i - 1][j])
+        let pressure_grad = dt / (2.0 * rho * dx) * (p[i][j + 1] - p[i][j - 1])
+        let visc_u_x = nu * dt / (dx * dx) * (un[i][j + 1] - 2.0 * un[i][j] + un[i][j - 1])
+        let visc_u_y = nu * dt / (dy * dy) * (un[i + 1][j] - 2.0 * un[i][j] + un[i - 1][j])
+        
+        u[i][j] = un[i][j] - conv_u_x - conv_u_y - pressure_grad + visc_u_x + visc_u_y
+      }
+    }
+    
+    // Update v velocity component
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        let conv_v_x = un[i][j] * dt / dx * (vn[i][j] - vn[i][j - 1])
+        let conv_v_y = vn[i][j] * dt / dy * (vn[i][j] - vn[i - 1][j])
+        let pressure_grad = dt / (2.0 * rho * dy) * (p[i + 1][j] - p[i - 1][j])
+        let visc_v_x = nu * dt / (dx * dx) * (vn[i][j + 1] - 2.0 * vn[i][j] + vn[i][j - 1])
+        let visc_v_y = nu * dt / (dy * dy) * (vn[i + 1][j] - 2.0 * vn[i][j] + vn[i - 1][j])
+        
+        v[i][j] = vn[i][j] - conv_v_x - conv_v_y - pressure_grad + visc_v_x + visc_v_y
+      }
+    }
+    
+    // Apply velocity boundary conditions
+    // u[0, :] = 0, u[:, 0] = 0, u[:, -1] = 0
+    for j = 0; j < nx; j = j + 1 {
+      u[0][j] = 0.0
+    }
+    for i = 0; i < ny; i = i + 1 {
+      u[i][0] = 0.0
+      u[i][nx - 1] = 0.0
+    }
+    // u[-1, :] = 1 (cavity lid velocity)
+    for j = 0; j < nx; j = j + 1 {
+      u[ny - 1][j] = 1.0
+    }
+    
+    // v[0, :] = 0, v[-1, :] = 0, v[:, 0] = 0, v[:, -1] = 0
+    for j = 0; j < nx; j = j + 1 {
+      v[0][j] = 0.0
+      v[ny - 1][j] = 0.0
+    }
+    for i = 0; i < ny; i = i + 1 {
+      v[i][0] = 0.0
+      v[i][nx - 1] = 0.0
+    }
+    
+    // Progress output every 10 steps
+    if (n + 1) % 10 == 0 {
+      println("Time step \{n + 1}/\{nt} completed")
+    }
+  }
+  
+  (u, v, p)
+}
+// Main function to run the cavity flow simulation
+fn main {
+  println("=== 2D Cavity Flow Solver (Array-based Implementation) ===")
+  println("Grid: \{nx}x\{ny}, Time steps: \{nt}")
+  println("Parameters: rho=\{rho}, nu=\{nu}, dt=\{dt}")
+  println("")
+  
+  // Initialize arrays
+  let u = create_zeros_2d(ny, nx)
+  let v = create_zeros_2d(ny, nx)
+  let p = create_zeros_2d(ny, nx)
+  
+  // Generate mesh grid (修正：正确获取返回值)
+  let (X, Y) = generate_mesh_grid()
+  
+  // Run simulation with reduced time steps for testing
+  let nt_test = 100
+  println("Running simulation...")
+  let (u_final, v_final, p_final) = cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)
+  
+  // Post-processing: calculate velocity magnitude at center
+  let mid_i = ny / 2
+  let mid_j = nx / 2
+  let u_center = u_final[mid_i][mid_j]
+  let v_center = v_final[mid_i][mid_j]
+  let p_center = p_final[mid_i][mid_j]
+  let vel_mag_center = (u_center * u_center + v_center * v_center).sqrt()
+  
+  println("")
+  println("=== Post-processing Results ===")
+  println("Results at center (\{mid_i}, \{mid_j}):")
+  println("  u = \{u_center}")
+  println("  v = \{v_center}")
+  println("  p = \{p_center}")
+  println("  |V| = \{vel_mag_center}")
+  println("  X at center = \{X[mid_i][mid_j]}")  // 现在可以使用X
+  println("  Y at center = \{Y[mid_i][mid_j]}")  // 现在可以使用Y
+  
+  // Print some velocity values along the top lid
+  println("")
+  println("Top lid velocity profile:")
+  for j = 0; j < nx; j = j + 5 {
+    let x_pos = X[ny - 1][j]  // 使用mesh grid的X坐标
+    println("  x=\{x_pos}: u=\{u_final[ny - 1][j]}")
+  }
+  
+  // Find maximum values
+  let mut max_u = 0.0
+  let mut max_v = 0.0
+  let mut max_p = 0.0
+  let mut min_p = 0.0
+  
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let u_val = u_final[i][j]
+      let v_val = v_final[i][j]
+      let p_val = p_final[i][j]
+      
+      if u_val.abs() > max_u { max_u = u_val.abs() }
+      if v_val.abs() > max_v { max_v = v_val.abs() }
+      if p_val > max_p { max_p = p_val }
+      if p_val < min_p { min_p = p_val }
+    }
+  }
+  
+  println("")
+  println("Field statistics:")
+  println("  Max |u|: \{max_u}")
+  println("  Max |v|: \{max_v}")
+  println("  Pressure range: [\{min_p}, \{max_p}]")
+  
+  // Calculate velocity magnitude at a few sample points
+  println("")
+  println("Velocity magnitude at sample points:")
+  let sample_points = [(5, 5), (10, 10), (20, 20), (30, 30)]
+  for i = 0; i < sample_points.length(); i = i + 1 {
+    let (si, sj) = sample_points[i]
+    if si < ny && sj < nx {
+      let u_sample = u_final[si][sj]
+      let v_sample = v_final[si][sj]
+      let vel_mag_sample = (u_sample * u_sample + v_sample * v_sample).sqrt()
+      println("  Point (\{si}, \{sj}): |V| = \{vel_mag_sample}")
+    }
+  }
+  
+  println("")
+  println("=== Simulation completed successfully ===")
+  println("")
+  println("Note: Plotting functions are not implemented:")
+  println("- 3D surface plots (equivalent to matplotlib's ax.plot_surface)")
+  println("- Contour plots (equivalent to pyplot.contourf)")  
+  println("- Vector field plots (equivalent to pyplot.quiver)")
+  println("- Image saving (equivalent to pyplot.savefig)")
+  println("The computed data is available in u_final, v_final, p_final arrays")
+  println("for external visualization tools.")
 }
