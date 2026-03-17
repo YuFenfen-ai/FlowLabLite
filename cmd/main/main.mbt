@@ -41,19 +41,19 @@ fn generate_mesh_grid() -> (Array[Array[Double]], Array[Array[Double]]) {
   }
   
   // Create meshgrid - 修正：为每行创建新的数组
-  let X = Array::make(ny, Array::make(nx, 0.0))
-  let Y = Array::make(ny, Array::make(nx, 0.0))
+  let x = Array::make(ny, Array::make(nx, 0.0))
+  let y = Array::make(ny, Array::make(nx, 0.0))
   
   for i = 0; i < ny; i = i + 1 {
-    X[i] = Array::make(nx, 0.0)  // 为每行创建新数组
-    Y[i] = Array::make(nx, 0.0)  // 为每行创建新数组
+    x[i] = Array::make(nx, 0.0)  // 为每行创建新数组
+    y[i] = Array::make(nx, 0.0)  // 为每行创建新数组
     for j = 0; j < nx; j = j + 1 {
-      X[i][j] = x_coords[j]
-      Y[i][j] = y_coords[i]
+      x[i][j] = x_coords[j]
+      y[i][j] = y_coords[i]
     }
   }
   
-  (X, Y)
+  (x, y)
 }
 // Build up the b array for pressure Poisson equation
 fn build_up_b_array(b : Array[Array[Double]], rho : Double, dt : Double, 
@@ -224,7 +224,7 @@ fn main {
   let p = create_zeros_2d(ny, nx)
   
   // Generate mesh grid (修正：正确获取返回值)
-  let (X, Y) = generate_mesh_grid()
+  let (x, y) = generate_mesh_grid()
   
   // Run simulation with reduced time steps for testing
   let nt_test = 100
@@ -246,14 +246,14 @@ fn main {
   println("  v = \{v_center}")
   println("  p = \{p_center}")
   println("  |V| = \{vel_mag_center}")
-  println("  X at center = \{X[mid_i][mid_j]}")  // 现在可以使用X
-  println("  Y at center = \{Y[mid_i][mid_j]}")  // 现在可以使用Y
+  println("  X at center = \{x[mid_i][mid_j]}")  // 现在可以使用X
+  println("  Y at center = \{y[mid_i][mid_j]}")  // 现在可以使用Y
   
   // Print some velocity values along the top lid
   println("")
   println("Top lid velocity profile:")
   for j = 0; j < nx; j = j + 5 {
-    let x_pos = X[ny - 1][j]  // 使用mesh grid的X坐标
+    let x_pos = x[ny - 1][j]  // 使用mesh grid的X坐标
     println("  x=\{x_pos}: u=\{u_final[ny - 1][j]}")
   }
   
