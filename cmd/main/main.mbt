@@ -267,6 +267,108 @@ fn write_velocity_to_file(u : Array[Array[Double]], v : Array[Array[Double]],
   
   println("Velocity data written to \{filename} (simulated)")
 }
+// 添加用于浏览器展示的辅助函数
+fn create_visualization_data(u : Array[Array[Double]], v : Array[Array[Double]], 
+                           x : Array[Array[Double]], y : Array[Array[Double]]) -> String {
+  let mut result = "["
+  
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let x_pos = x[i][j]
+      let y_pos = y[i][j]
+      let u_val = u[i][j]
+      let v_val = v[i][j]
+      let vel_mag = (u_val * u_val + v_val * v_val).sqrt()
+      
+      if i > 0 || j > 0 {
+        result = result + ","
+      }
+      
+      result = result + "{"
+      result = result + "\"x\":" + x_pos.to_string() + ","
+      result = result + "\"y\":" + y_pos.to_string() + ","
+      result = result + "\"u\":" + u_val.to_string() + ","
+      result = result + "\"v\":" + v_val.to_string() + ","
+      result = result + "\"magnitude\":" + vel_mag.to_string() + ","
+      result = result + "\"i\":" + i.to_string() + ","
+      result = result + "\"j\":" + j.to_string()
+      result = result + "}"
+    }
+  }
+  
+  result = result + "]"
+  result
+}
+// 导出函数供浏览器调用
+pub fn get_simulation_config() -> String {
+  "{\"nx\":" + nx.to_string() + 
+  ",\"ny\":" + ny.to_string() + 
+  ",\"nt\":" + nt.to_string() + 
+  ",\"dx\":" + dx.to_string() + 
+  ",\"dy\":" + dy.to_string() + 
+  ",\"rho\":" + rho.to_string() + 
+  ",\"nu\":" + nu.to_string() + 
+  ",\"dt\":" + dt.to_string() + "}"
+}
+// 主要的模拟函数，返回结果数据
+pub fn run_cavity_simulation() -> String {
+  // 初始化数组
+  let u = create_zeros_2d(ny, nx)
+  let v = create_zeros_2d(ny, nx)
+  let p = create_zeros_2d(ny, nx)
+  
+  // 生成网格
+  let (x, y) = generate_mesh_grid()
+  
+  // 运行模拟（使用较少的时间步以提高浏览器性能）
+  let nt_browser = 50
+  let (u_final, v_final, p_final) = cavity_flow_array(nt_browser, u, v, dt, dx, dy, p, rho, nu)
+  
+  // 创建可视化数据
+  let data = create_visualization_data(u_final, v_final, x, y)
+  
+  // 返回完整的JSON数据
+  "{\"config\":" + get_simulation_config() + ",\"data\":" + data + "}"
+}
+// 用于浏览器调试的简化版本
+pub fn run_simple_simulation() -> String {
+  let u = create_zeros_2d(21, 21)  // 使用更小的网格
+  let v = create_zeros_2d(21, 21)
+  let p = create_zeros_2d(21, 21)
+  
+  // 设置一些简单的测试数据
+  for i = 0; i < 21; i = i + 1 {
+    for j = 0; j < 21; j = j + 1 {
+      u[i][j] = (i.to_double() - 10.0) / 10.0
+      v[i][j] = (j.to_double() - 10.0) / 10.0
+    }
+  }
+  
+  let mut result = "["
+  for i = 0; i < 21; i = i + 1 {
+    for j = 0; j < 21; j = j + 1 {
+      if i > 0 || j > 0 {
+        result = result + ","
+      }
+      let x_pos = j.to_double() / 10.0
+      let y_pos = i.to_double() / 10.0
+      let u_val = u[i][j]
+      let v_val = v[i][j]
+      let vel_mag = (u_val * u_val + v_val * v_val).sqrt()
+      
+      result = result + "{"
+      result = result + "\"x\":" + x_pos.to_string() + ","
+      result = result + "\"y\":" + y_pos.to_string() + ","
+      result = result + "\"u\":" + u_val.to_string() + ","
+      result = result + "\"v\":" + v_val.to_string() + ","
+      result = result + "\"magnitude\":" + vel_mag.to_string()
+      result = result + "}"
+    }
+  }
+  result = result + "]"
+  result
+}
+
 // Main function to run the cavity flow simulation
 fn main {
   println("=== 2D Cavity Flow Solver (Array-based Implementation) ===")
