@@ -9,6 +9,13 @@ let dy : Double = 2.0 / (ny - 1).to_double()
 let rho = 1.0
 let nu = 0.1
 let dt = 0.001
+// Placeholder for host-provided clock. For local CLI builds, implement a
+// native `now_seconds` function that returns seconds as Double and replace
+// this stub by binding the host symbol. Returning 0.0 means timing is
+// unavailable.
+pub fn now_seconds() -> Double {
+  0.0
+}
 // Helper function to create 2D array filled with zeros
 fn create_zeros_2d(rows : Int, cols : Int) -> Array[Array[Double]] {
   let result = Array::make(rows, Array::make(cols, 0.0))
@@ -371,6 +378,14 @@ pub fn run_simple_simulation() -> String {
 
 // Main function to run the cavity flow simulation
 fn main {
+  // Program timing placeholders.
+  // NOTE: MoonBit may not provide a built-in timing API in this environment.
+  // To enable accurate timing, bind a host function (e.g., JS `Date.now()` for WASM
+  // or a native clock) to return a Double seconds-since-epoch value and assign
+  // it to `program_start` below.
+  let program_start = now_seconds()
+  let have_timer = program_start > 0.0
+
   println("=== 2D Cavity Flow Solver (Array-based Implementation) ===")
   println("Grid: \{nx}x\{ny}, Time steps: \{nt}")
   println("Parameters: rho=\{rho}, nu=\{nu}, dt=\{dt}")
@@ -387,7 +402,20 @@ fn main {
   // Run simulation with reduced time steps for testing
   let nt_test = 100
   println("Running simulation...")
+  // Simulation timing placeholders. Replace `sim_start`/`sim_end` with real
+  // timestamps if you bind a host timing function.
+  let sim_start = now_seconds()
+
   let (u_final, v_final, p_final) = cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)
+
+  let sim_end = now_seconds()
+
+  if sim_start > 0.0 && sim_end > 0.0 {
+    let sim_elapsed = sim_end - sim_start
+    println("Simulation runtime (seconds): \{sim_elapsed}")
+  } else {
+    println("Simulation runtime: timing API unavailable in this environment")
+  }
   
   // Post-processing: calculate velocity magnitude at center
   let mid_i = ny / 2
@@ -471,4 +499,15 @@ fn main {
   println("- Image saving (equivalent to pyplot.savefig)")
   println("The computed data is available in u_final, v_final, p_final arrays")
   println("for external visualization tools.")
+
+  // Program end time placeholder. Replace `program_end` with a real timestamp
+  // from a host binding to enable total runtime reporting.
+  let program_end = now_seconds()
+
+  if have_timer && program_start > 0.0 && program_end > 0.0 {
+    let total_elapsed = program_end - program_start
+    println("Total program runtime (seconds): \{total_elapsed}")
+  } else if !have_timer {
+    println("Total program runtime: timing API unavailable in this environment")
+  }
 }
