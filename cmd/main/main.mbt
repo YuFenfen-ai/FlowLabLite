@@ -3,7 +3,7 @@ let nx = 41
 let ny = 41
 let nt = 500
 let nit = 50
-let c = 1.0
+let _c = 1.0
 let dx : Double = 2.0 / (nx - 1).to_double()
 let dy : Double = 2.0 / (ny - 1).to_double()
 let rho = 1.0
@@ -329,7 +329,7 @@ pub fn run_cavity_simulation() -> String {
   
   // 运行模拟（使用较少的时间步以提高浏览器性能）
   let nt_browser = 50
-  let (u_final, v_final, p_final) = cavity_flow_array(nt_browser, u, v, dt, dx, dy, p, rho, nu)
+  let (u_final, v_final, _p_final) = cavity_flow_array(nt_browser, u, v, dt, dx, dy, p, rho, nu)
   
   // 创建可视化数据
   let data = create_visualization_data(u_final, v_final, x, y)
@@ -341,7 +341,7 @@ pub fn run_cavity_simulation() -> String {
 pub fn run_simple_simulation() -> String {
   let u = create_zeros_2d(21, 21)  // 使用更小的网格
   let v = create_zeros_2d(21, 21)
-  let p = create_zeros_2d(21, 21)
+  let _p = create_zeros_2d(21, 21)
   
   // 设置一些简单的测试数据
   for i = 0; i < 21; i = i + 1 {
