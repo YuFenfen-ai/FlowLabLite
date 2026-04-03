@@ -9,10 +9,11 @@ let dy : Double = 2.0 / (ny - 1).to_double()
 let rho = 1.0
 let nu = 0.1
 let dt = 0.001
-// Placeholder for host-provided clock. For local CLI builds, implement a
-// native `now_seconds` function that returns seconds as Double and replace
-// this stub by binding the host symbol. Returning 0.0 means timing is
-// unavailable.
+// `now_seconds` is normally provided by the host (native object or DLL).
+// If you build and provide `now_clock` (DLL / native object), it will override
+// this. For now provide a safe fallback implementation so `moon build` succeeds
+// in environments without the host symbol. The fallback returns 0.0 meaning
+// "timing unavailable".
 pub fn now_seconds() -> Double {
   0.0
 }
