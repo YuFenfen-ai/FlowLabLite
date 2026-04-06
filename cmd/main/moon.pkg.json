@@ -1,6 +1,7 @@
 {
   "import": [
-    "bench"
+    "bench",
+    "moonbitlang/core"
   ],
   "test-import": [
     "moonbitlang/core"

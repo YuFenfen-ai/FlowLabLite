@@ -249,6 +249,22 @@ fn cavity_flow_array(
 
   (u, v, p)
 }
+
+//test (b : @bench.T) {
+//b.bench(fn() { b.keep(cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)) })
+//}
+
+fn fib(n : Int) -> Int {
+  if n < 2 {
+    return n
+  }
+  return fib(n - 1) + fib(n - 2)
+}
+
+test (b : @bench.T) {
+  b.bench(fn() { b.keep(fib(20)) })
+}
+
 // Function to write velocity data to a text file
 fn write_velocity_to_file(u : Array[Array[Double]], v : Array[Array[Double]], 
                          x : Array[Array[Double]], y : Array[Array[Double]], 
@@ -408,6 +424,10 @@ fn main {
   let sim_start = now_seconds()
 
   let (u_final, v_final, p_final) = cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)
+
+  //test (b : @bench.T) {
+  //b.bench(fn() { b.keep(cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)) })
+  //}
 
   let sim_end = now_seconds()
 
