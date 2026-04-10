@@ -1,8 +1,9 @@
+//  Copyright (C) 2026 Ezhou Hi-Modeling Technology Co., Ltd.
 //  FlowLabLite – A lightweight, AI-native CFD demonstration prototype for 2D lid-driven cavity flow.
 //  Written in MoonBit, featuring AI-assisted development and interactive browser-based visualization via WebAssembly.
 //
 //  FlowLabLite is an open-source project developed by Fenfen Yu (余芬芬), in collaboration with
-//  Beihang University (北京航空航天大学) and Ezhou Haimu Technology Co., Ltd. (鄂州海慕科技有限公司).
+//  Beihang University (北京航空航天大学) and Ezhou Hi-Modeling Technology Co., Ltd. (鄂州海慕科技有限公司).
 //
 //  The source code is made publicly available for scientific research, educational purposes,
 //  and technology demonstration. To ensure reproducibility, code integrity, and long-term maintainability,

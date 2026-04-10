@@ -1,0 +1,13 @@
+package-name: "lib"
+is-main: false
+link: {
+  wasm-gc: {
+    exports: [
+      "init_cavity",
+      "solve_step",
+      "get_velocity_x",
+      "get_velocity_y",
+      "get_pressure"
+    ]
+  }
+}
