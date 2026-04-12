@@ -606,10 +606,18 @@
                 document.getElementById('maxV').textContent = maxV.toFixed(4);
                 document.getElementById('maxP').textContent = isFinite(maxP) ? maxP.toFixed(4) : 'N/A';
                 document.getElementById('minP').textContent = isFinite(minP) ? minP.toFixed(4) : 'N/A';
-                document.getElementById('centerU').textContent = centerU.toFixed(4);
-                document.getElementById('centerV').textContent = centerV.toFixed(4);
-                document.getElementById('centerP').textContent = centerP.toFixed(4);
-                document.getElementById('centerMag').textContent = centerMag.toFixed(4);
+                // Prefer O(1) WASM center getters when available
+                const cu = (this.wasmModule && this.wasmModule.get_u_center)
+                    ? this.wasmModule.get_u_center() : centerU;
+                const cv = (this.wasmModule && this.wasmModule.get_v_center)
+                    ? this.wasmModule.get_v_center() : centerV;
+                const cp = (this.wasmModule && this.wasmModule.get_p_center)
+                    ? this.wasmModule.get_p_center() : centerP;
+                const cm = Math.sqrt(cu * cu + cv * cv);
+                document.getElementById('centerU').textContent = cu.toFixed(4);
+                document.getElementById('centerV').textContent = cv.toFixed(4);
+                document.getElementById('centerP').textContent = cp.toFixed(4);
+                document.getElementById('centerMag').textContent = cm.toFixed(4);
                 // Update colorbar tick labels (use WASM max magnitude if available)
                 const velMax = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
                     ? this.wasmModule.get_max_velocity_magnitude() : maxU;
