@@ -295,9 +295,18 @@
                 try {
                     this.updateStatus('Loading WebAssembly module...', 'loading');
                     
-                    // 这里需要替换为实际的 WASM 文件路径
-                    // 假设你已经将 MoonBit 代码编译为 WASM
-                    const response = await fetch('./main.wasm');
+                    // Try release build first, then fall back to debug build.
+                    // Run: moon build --target wasm-gc  (or --release for release)
+                    const wasmPaths = [
+                        '../../_build/wasm-gc/release/build/cmd/main/main.wasm',
+                        '../../_build/wasm-gc/debug/build/cmd/main/main.wasm'
+                    ];
+                    let response = null;
+                    for (const p of wasmPaths) {
+                        const r = await fetch(p);
+                        if (r.ok) { response = r; break; }
+                    }
+                    if (!response) throw new Error('WASM file not found – run: moon build --target wasm-gc');
                     const wasmBytes = await response.arrayBuffer();
                     const wasmModule = await WebAssembly.instantiate(wasmBytes);
                     
