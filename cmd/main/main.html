@@ -587,25 +587,24 @@
                 
                 ctx.putImageData(imageData, 0, 0);
                 
-                // 绘制速度矢量
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 1;
-                
+                // Draw velocity vectors – scale so the longest arrow spans ~one cell width
                 const nx = this.config ? this.config.nx : Math.sqrt(this.simulationData.length);
-                const step = Math.max(1, Math.floor(nx / 20)); // 控制矢量密度
-                
-                this.simulationData.forEach((point, index) => {
-                    if (point.i !== undefined && point.j !== undefined) {
-                        if (point.i % step === 0 && point.j % step === 0) {
-                            const px = (point.x / 2.0) * width;
-                            const py = (1.0 - point.y / 2.0) * height;
-                            
-                            const scale = 50; // 矢量长度缩放因子
-                            const dx = point.u * scale;
-                            const dy = -point.v * scale; // 翻转Y轴
-                            
-                            this.drawArrow(ctx, px, py, px + dx, py + dy);
-                        }
+                const step = Math.max(1, Math.floor(nx / 20));
+                const cellPx = width / nx;
+                const maxMag2 = maxMagnitude || 1;
+                const arrowScale = (cellPx * step * 0.8) / maxMag2;
+
+                ctx.strokeStyle = 'rgba(40,40,40,0.75)';
+                ctx.lineWidth = 1;
+
+                this.simulationData.forEach(point => {
+                    if (point.i !== undefined && point.j !== undefined &&
+                        point.i % step === 0 && point.j % step === 0) {
+                        const px = (point.x / 2.0) * width;
+                        const py = (1.0 - point.y / 2.0) * height;
+                        const dx = point.u * arrowScale;
+                        const dy = -point.v * arrowScale;
+                        this.drawArrow(ctx, px, py, px + dx, py + dy);
                     }
                 });
                 
