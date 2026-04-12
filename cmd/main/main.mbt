@@ -80,6 +80,9 @@ pub fn get_ny() -> Int { ny }
 /// Return total time-step count (nt).
 pub fn get_nt() -> Int { nt }
 
+/// Return Reynolds number Re = u_lid * L / nu  (u_lid=1, L=2).
+pub fn get_re() -> Double { 1.0 * 2.0 / nu }
+
 /// Return how many solver steps have been executed since the last init_simulation().
 pub fn get_step_count() -> Int { g_steps[0] }
 
