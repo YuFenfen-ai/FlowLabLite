@@ -786,24 +786,6 @@
                 window.URL.revokeObjectURL(url);
             }
 
-            extractStringFromWasm(ptr) {
-                // 这个函数需要根据你的 WASM 内存布局来实现
-                // 这里是一个示例实现
-                if (!this.wasmModule.memory) {
-                    throw new Error('WASM memory not available');
-                }
-                
-                const memory = new Uint8Array(this.wasmModule.memory.buffer);
-                let length = 0;
-                
-                // 找到字符串的结尾（假设以null结尾）
-                while (memory[ptr + length] !== 0) {
-                    length++;
-                }
-                
-                const bytes = memory.slice(ptr, ptr + length);
-                return new TextDecoder().decode(bytes);
-            }
         }
 
         // 初始化应用
