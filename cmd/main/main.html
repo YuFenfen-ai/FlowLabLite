@@ -343,27 +343,41 @@
             }
 
             async runFullSimulation() {
-                this.updateStatus('Running full cavity flow simulation...', 'loading');
+                this.updateStatus('Running full cavity flow simulation…', 'loading');
 
                 try {
                     if (this.wasmModule && this.wasmModule.init_simulation) {
-                        // Real WASM path: init → solve → read grid point-by-point
+                        // Chunked WASM path: run 50 steps at a time, redraw after each chunk
+                        const totalSteps = this.wasmModule.get_nt ? this.wasmModule.get_nt() : 500;
+                        const chunkSize = 50;
                         this.wasmModule.init_simulation();
-                        this.updateStatus('Solver running (500 steps) – please wait…', 'loading');
-                        // yield to browser so the status message paints before the CPU-heavy call
-                        await new Promise(r => setTimeout(r, 0));
-                        this.wasmModule.run_all_steps();
-                        this.simulationData = this._readGridFromWasm();
                         this.config = this._readConfigFromWasm();
+
+                        for (let done = 0; done < totalSteps; done += chunkSize) {
+                            const n = Math.min(chunkSize, totalSteps - done);
+                            if (this.wasmModule.run_n_steps) {
+                                this.wasmModule.run_n_steps(n);
+                            } else {
+                                this.wasmModule.run_all_steps();
+                                done = totalSteps; // fallback: run all at once
+                            }
+                            this.simulationData = this._readGridFromWasm();
+                            this.updateParameterDisplay();
+                            this.visualizeResults();
+                            this.updateStatus(
+                                `Running… ${Math.min(done + chunkSize, totalSteps)}/${totalSteps} steps`, 'loading');
+                            // Yield to browser so the canvas actually repaints
+                            await new Promise(r => setTimeout(r, 0));
+                        }
                     } else {
                         // Mock fallback when WASM is unavailable
                         const result = JSON.parse(this.generateMockFullSimulationData());
                         this.simulationData = result.data;
                         this.config = result.config;
+                        this.updateParameterDisplay();
+                        this.visualizeResults();
                     }
 
-                    this.updateParameterDisplay();
-                    this.visualizeResults();
                     this.updateStatus('Full simulation completed successfully', 'success');
                 } catch (error) {
                     console.error('Simulation failed:', error);
