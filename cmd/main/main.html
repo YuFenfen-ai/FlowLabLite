@@ -770,9 +770,12 @@
                     return;
                 }
                 
-                let csvContent = 'x,y,u,v,magnitude\n';
+                let csvContent = 'i,j,x,y,u,v,magnitude,pressure\n';
                 this.simulationData.forEach(point => {
-                    csvContent += `${point.x},${point.y},${point.u},${point.v},${point.magnitude}\n`;
+                    const i = point.i !== undefined ? point.i : '';
+                    const j = point.j !== undefined ? point.j : '';
+                    const p = point.p !== undefined ? point.p : '';
+                    csvContent += `${i},${j},${point.x},${point.y},${point.u},${point.v},${point.magnitude},${p}\n`;
                 });
                 
                 const blob = new Blob([csvContent], { type: 'text/csv' });
