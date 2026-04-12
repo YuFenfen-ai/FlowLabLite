@@ -646,21 +646,34 @@
                 });
                 const rangeP = maxP - minP || 1;
 
-                // Paint pixel-level pressure colour map (cool → warm)
+                // Build grid lookup and bilinear-fill every canvas pixel
+                const nx = this.config ? this.config.nx : 41;
+                const ny = this.config ? this.config.ny : 41;
+                const grid = Array.from({ length: ny }, () => new Array(nx));
+                this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
                 const imageData = ctx.createImageData(width, height);
-                this.simulationData.forEach(point => {
-                    if (point.p === undefined) return;
-                    const px = Math.floor((point.x / 2.0) * (width - 1));
-                    const py = Math.floor((1.0 - point.y / 2.0) * (height - 1));
-                    if (px < 0 || px >= width || py < 0 || py >= height) return;
-                    const t = (point.p - minP) / rangeP;
-                    const color = this.pressureToColor(t);
-                    const idx = (py * width + px) * 4;
-                    imageData.data[idx]     = color.r;
-                    imageData.data[idx + 1] = color.g;
-                    imageData.data[idx + 2] = color.b;
-                    imageData.data[idx + 3] = 255;
-                });
+                for (let py = 0; py < height; py++) {
+                    for (let px = 0; px < width; px++) {
+                        const gx = px / (width  - 1) * (nx - 1);
+                        const gy = (1 - py / (height - 1)) * (ny - 1);
+                        const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
+                        const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
+                        const tx = gx - j0, ty = gy - i0;
+                        const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                        const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                        if (!p00 || !p10 || !p01 || !p11) continue;
+                        const pval = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
+                                     (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
+                        const t = (pval - minP) / rangeP;
+                        const color = this.pressureToColor(t);
+                        const idx = (py * width + px) * 4;
+                        imageData.data[idx]     = color.r;
+                        imageData.data[idx + 1] = color.g;
+                        imageData.data[idx + 2] = color.b;
+                        imageData.data[idx + 3] = 255;
+                    }
+                }
                 ctx.putImageData(imageData, 0, 0);
 
                 // Border + labels
