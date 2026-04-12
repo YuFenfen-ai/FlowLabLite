@@ -111,6 +111,17 @@ pub fn get_p_at(i : Int, j : Int) -> Double {
   if i >= 0 && i < ny && j >= 0 && j < nx { g_p[i][j] } else { 0.0 }
 }
 
+/// Return velocity magnitude sqrt(u²+v²) at grid index (i,j).
+pub fn get_velocity_magnitude_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx {
+    let u = g_u[i][j]
+    let v = g_v[i][j]
+    (u * u + v * v).sqrt()
+  } else {
+    0.0
+  }
+}
+
 /// Return maximum absolute u-velocity over the whole grid.
 pub fn get_max_u() -> Double {
   let mut m = 0.0
