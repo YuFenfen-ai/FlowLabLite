@@ -334,31 +334,65 @@
 
             async runFullSimulation() {
                 this.updateStatus('Running full cavity flow simulation...', 'loading');
-                
+
                 try {
-                    let resultJson;
-                    
-                    if (this.wasmModule && this.wasmModule.run_cavity_simulation) {
-                        // 使用真实的 WASM 模块
-                        const resultPtr = this.wasmModule.run_cavity_simulation();
-                        resultJson = this.extractStringFromWasm(resultPtr);
+                    if (this.wasmModule && this.wasmModule.init_simulation) {
+                        // Real WASM path: init → solve → read grid point-by-point
+                        this.wasmModule.init_simulation();
+                        this.updateStatus('Solver running (500 steps) – please wait…', 'loading');
+                        // yield to browser so the status message paints before the CPU-heavy call
+                        await new Promise(r => setTimeout(r, 0));
+                        this.wasmModule.run_all_steps();
+                        this.simulationData = this._readGridFromWasm();
+                        this.config = this._readConfigFromWasm();
                     } else {
-                        // 使用模拟数据进行演示
-                        resultJson = this.generateMockFullSimulationData();
+                        // Mock fallback when WASM is unavailable
+                        const result = JSON.parse(this.generateMockFullSimulationData());
+                        this.simulationData = result.data;
+                        this.config = result.config;
                     }
-                    
-                    const result = JSON.parse(resultJson);
-                    this.simulationData = result.data;
-                    this.config = result.config;
-                    
+
                     this.updateParameterDisplay();
                     this.visualizeResults();
                     this.updateStatus('Full simulation completed successfully', 'success');
-                    
                 } catch (error) {
                     console.error('Simulation failed:', error);
                     this.updateStatus('Simulation failed: ' + error.message, 'error');
                 }
+            }
+
+            /** Read all grid data from the WASM globals into a JS array. */
+            _readGridFromWasm() {
+                const wasm = this.wasmModule;
+                const nx = wasm.get_nx(), ny = wasm.get_ny();
+                const data = [];
+                for (let i = 0; i < ny; i++) {
+                    for (let j = 0; j < nx; j++) {
+                        const u = wasm.get_u_at(i, j);
+                        const v = wasm.get_v_at(i, j);
+                        const p = wasm.get_p_at(i, j);
+                        data.push({
+                            x: j / (nx - 1) * 2.0,
+                            y: i / (ny - 1) * 2.0,
+                            u, v, p,
+                            magnitude: Math.sqrt(u * u + v * v),
+                            i, j
+                        });
+                    }
+                }
+                return data;
+            }
+
+            /** Build config object from WASM exports. */
+            _readConfigFromWasm() {
+                const wasm = this.wasmModule;
+                const nx = wasm.get_nx(), ny = wasm.get_ny(), nt = wasm.get_nt();
+                return {
+                    nx, ny, nt,
+                    dx: 2.0 / (nx - 1),
+                    dy: 2.0 / (ny - 1),
+                    dt: 0.001, rho: 1.0, nu: 0.1
+                };
             }
 
             async runSimpleTest() {
