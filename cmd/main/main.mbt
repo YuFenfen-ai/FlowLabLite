@@ -190,6 +190,21 @@ pub fn get_min_p() -> Double {
   m
 }
 
+/// Return mean absolute divergence ∑|∂u/∂x + ∂v/∂y| / (interior cells) as a
+/// rough indicator of how well mass conservation is satisfied after the last step.
+pub fn get_divergence_norm() -> Double {
+  let mut sum = 0.0
+  let count = (ny - 2) * (nx - 2)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let div = (g_u[i][j + 1] - g_u[i][j - 1]) / (2.0 * dx) +
+                (g_v[i + 1][j] - g_v[i - 1][j]) / (2.0 * dy)
+      sum = sum + div.abs()
+    }
+  }
+  if count > 0 { sum / count.to_double() } else { 0.0 }
+}
+
 /// Return the maximum velocity magnitude sqrt(u²+v²) over the whole grid.
 pub fn get_max_velocity_magnitude() -> Double {
   let mut m = 0.0
