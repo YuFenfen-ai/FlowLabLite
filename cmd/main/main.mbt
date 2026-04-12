@@ -83,6 +83,21 @@ pub fn get_nt() -> Int { nt }
 /// Return Reynolds number Re = u_lid * L / nu  (u_lid=1, L=2).
 pub fn get_re() -> Double { 1.0 * 2.0 / nu }
 
+/// Return grid spacing in x.
+pub fn get_dx() -> Double { dx }
+
+/// Return grid spacing in y.
+pub fn get_dy() -> Double { dy }
+
+/// Return time step size dt.
+pub fn get_dt() -> Double { dt }
+
+/// Return fluid density rho.
+pub fn get_rho() -> Double { rho }
+
+/// Return kinematic viscosity nu.
+pub fn get_nu() -> Double { nu }
+
 /// Return how many solver steps have been executed since the last init_simulation().
 pub fn get_step_count() -> Int { g_steps[0] }
 
