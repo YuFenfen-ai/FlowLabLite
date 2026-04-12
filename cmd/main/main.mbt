@@ -190,6 +190,20 @@ pub fn get_min_p() -> Double {
   m
 }
 
+/// Return the maximum velocity magnitude sqrt(u²+v²) over the whole grid.
+pub fn get_max_velocity_magnitude() -> Double {
+  let mut m = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let u = g_u[i][j]
+      let v = g_v[i][j]
+      let mag = (u * u + v * v).sqrt()
+      if mag > m { m = mag }
+    }
+  }
+  m
+}
+
 /// Run exactly n time steps starting from the current global state.
 /// JS can call this in chunks to implement progressive visualization.
 /// init_simulation() must be called once before the first chunk.
