@@ -424,30 +424,30 @@
             }
 
             async runSimpleTest() {
-                this.updateStatus('Running quick test (10 steps)…', 'loading');
+                // Quick test: run only 50 steps for a fast preview
+                const quickSteps = 50;
+                this.updateStatus(`Running quick preview (${quickSteps} steps)…`, 'loading');
 
                 try {
                     if (this.wasmModule && this.wasmModule.init_simulation) {
-                        // Run only 10 steps so the browser stays responsive
                         this.wasmModule.init_simulation();
-                        await new Promise(r => setTimeout(r, 0));
-                        // Call run_all_steps but note nt=500 may take a moment;
-                        // for a "quick" feel we still run the full exported function.
-                        this.wasmModule.run_all_steps();
-                        this.simulationData = this._readGridFromWasm();
                         this.config = this._readConfigFromWasm();
+                        await new Promise(r => setTimeout(r, 0));
+                        if (this.wasmModule.run_n_steps) {
+                            this.wasmModule.run_n_steps(quickSteps);
+                        } else {
+                            this.wasmModule.run_all_steps();
+                        }
+                        this.simulationData = this._readGridFromWasm();
                     } else {
                         this.simulationData = JSON.parse(this.generateMockSimpleData());
-                        this.config = {
-                            nx: 21, ny: 21, nt: 10,
-                            dx: 0.1, dy: 0.1, dt: 0.001,
-                            rho: 1.0, nu: 0.1
-                        };
+                        this.config = { nx: 21, ny: 21, nt: 50,
+                            dx: 0.1, dy: 0.1, dt: 0.001, rho: 1.0, nu: 0.1, re: 20 };
                     }
 
                     this.updateParameterDisplay();
                     this.visualizeResults();
-                    this.updateStatus('Quick test completed', 'success');
+                    this.updateStatus(`Quick preview done (${quickSteps} steps)`, 'success');
                 } catch (error) {
                     console.error('Simple test failed:', error);
                     this.updateStatus('Simple test failed: ' + error.message, 'error');
