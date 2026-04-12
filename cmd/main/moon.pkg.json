@@ -2,6 +2,9 @@
   "import": [
     "moonbitlang/core"
   ],
+  "bench-import": [
+    "moonbitlang/core/bench"
+  ],
   "link": {
     "wasm-gc": {
       "exports": [
