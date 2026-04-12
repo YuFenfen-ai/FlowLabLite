@@ -77,6 +77,18 @@ pub fn get_ny() -> Int { ny }
 /// Return total time-step count (nt).
 pub fn get_nt() -> Int { nt }
 
+/// Reset the global u, v, p arrays to zero so a fresh simulation can start.
+/// JS must call this before run_all_steps().
+pub fn init_simulation() -> Unit {
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      g_u[i][j] = 0.0
+      g_v[i][j] = 0.0
+      g_p[i][j] = 0.0
+    }
+  }
+}
+
 // Helper function to create 2D array filled with zeros
 fn create_zeros_2d(rows : Int, cols : Int) -> Array[Array[Double]] {
   let result = Array::make(rows, Array::make(cols, 0.0))
