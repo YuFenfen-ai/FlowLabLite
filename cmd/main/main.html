@@ -239,6 +239,8 @@
                         <span class="parameter-value" id="nit">-</span>
                         <span class="parameter-label">Steps done:</span>
                         <span class="parameter-value" id="stepsDone">-</span>
+                        <span class="parameter-label">|div(u)| avg:</span>
+                        <span class="parameter-value" id="divNorm">-</span>
                     </div>
                 </div>
                 
@@ -543,6 +545,9 @@
                     const steps = this.wasmModule && this.wasmModule.get_step_count
                         ? this.wasmModule.get_step_count() : '-';
                     document.getElementById('stepsDone').textContent = steps;
+                    const divN = this.wasmModule && this.wasmModule.get_divergence_norm
+                        ? this.wasmModule.get_divergence_norm().toExponential(3) : '-';
+                    document.getElementById('divNorm').textContent = divN;
 
                     const Re = this.config.re !== undefined
                         ? this.config.re
@@ -605,7 +610,7 @@
                 this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
                 // Reset info panel to initial state
                 ['maxU','maxV','maxP','minP','centerU','centerV','centerP','centerMag',
-                 'gridSize','timeSteps','density','viscosity','timeStep','reynolds','nit','stepsDone']
+                 'gridSize','timeSteps','density','viscosity','timeStep','reynolds','nit','stepsDone','divNorm']
                     .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '-'; });
                 document.getElementById('velMin').textContent = '0.0000';
                 document.getElementById('velMax').textContent = '–';
