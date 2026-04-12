@@ -7,5 +7,27 @@
   ],
   "bench-import": [
     "moonbitlang/core"
-  ]
+  ],
+  "link": {
+    "wasm-gc": {
+      "exports": [
+        "get_simulation_config",
+        "run_cavity_simulation",
+        "run_simple_simulation",
+        "init_simulation",
+        "run_all_steps",
+        "get_nx",
+        "get_ny",
+        "get_nt",
+        "get_u_at",
+        "get_v_at",
+        "get_p_at",
+        "get_max_u",
+        "get_max_v",
+        "get_max_p",
+        "get_min_p"
+      ],
+      "export-memory-name": "memory"
+    }
+  }
 }
