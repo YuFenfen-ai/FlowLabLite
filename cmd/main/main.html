@@ -188,10 +188,10 @@
         </p>
         
         <div class="controls">
-            <button id="runSimulation" class="primary-btn">🚀 Run Full Simulation</button>
-            <button id="runSimpleTest" class="secondary-btn">🧪 Run Quick Test</button>
-            <button id="clearCanvas" class="secondary-btn">🗑️ Clear</button>
-            <button id="downloadData" class="secondary-btn">💾 Download Data</button>
+            <button id="runSimulation" class="primary-btn" title="Shortcut: F">Run Full Simulation (500 steps)</button>
+            <button id="runSimpleTest" class="secondary-btn" title="Shortcut: Q">Quick Preview (50 steps)</button>
+            <button id="clearCanvas" class="secondary-btn" title="Shortcut: C">Clear</button>
+            <button id="downloadData" class="secondary-btn" title="Shortcut: D">Download CSV</button>
         </div>
         
         <div id="status" class="status loading">Ready to start simulation</div>
@@ -304,6 +304,16 @@
                 document.getElementById('runSimpleTest').addEventListener('click', () => this.runSimpleTest());
                 document.getElementById('clearCanvas').addEventListener('click', () => this.clearCanvases());
                 document.getElementById('downloadData').addEventListener('click', () => this.downloadData());
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.tagName === 'INPUT') return;
+                    switch (e.key.toUpperCase()) {
+                        case 'F': this.runFullSimulation(); break;
+                        case 'Q': this.runSimpleTest();    break;
+                        case 'C': this.clearCanvases();    break;
+                        case 'D': this.downloadData();     break;
+                    }
+                });
             }
 
             updateStatus(message, type = 'loading') {
