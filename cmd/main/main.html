@@ -195,13 +195,23 @@
             <div class="canvas-container">
                 <h3>Velocity Vector Field</h3>
                 <canvas id="velocityCanvas" width="500" height="500"></canvas>
-                <div class="colorbar"></div>
+                <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
+                    <span id="velMin" style="font-size:11px;color:#555">0.0000</span>
+                    <div class="colorbar"></div>
+                    <span id="velMax" style="font-size:11px;color:#555">1.0000</span>
+                </div>
                 <div class="colorbar-label">Velocity Magnitude (m/s)</div>
             </div>
-            
+
             <div class="canvas-container">
                 <h3>Pressure Field</h3>
                 <canvas id="pressureCanvas" width="500" height="500"></canvas>
+                <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
+                    <span id="presMin" style="font-size:11px;color:#555">–</span>
+                    <div class="colorbar" style="background:linear-gradient(to top,#0000ff,#00ff00,#ff0000)"></div>
+                    <span id="presMax" style="font-size:11px;color:#555">–</span>
+                </div>
+                <div class="colorbar-label">Pressure (Pa)</div>
             </div>
             
             <div class="info-panel">
@@ -543,6 +553,11 @@
                 document.getElementById('centerV').textContent = centerV.toFixed(4);
                 document.getElementById('centerP').textContent = centerP.toFixed(4);
                 document.getElementById('centerMag').textContent = centerMag.toFixed(4);
+                // Update colorbar tick labels
+                document.getElementById('velMin').textContent = '0.0000';
+                document.getElementById('velMax').textContent = maxU.toFixed(4);
+                if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
+                if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
             }
             visualizeResults() {
                 this.clearCanvases();
