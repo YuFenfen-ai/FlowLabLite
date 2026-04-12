@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# build_wasm.sh – Build FlowLabLite WASM with all exported functions.
+#
+# Usage:
+#   bash build_wasm.sh          # debug build (faster, with source-map)
+#   bash build_wasm.sh release  # release/optimised build
+#
+# Why this script exists:
+#   moon 0.1.20260309 passes "-pkg-config-path ./cmd/main/moon.pkg" to
+#   moonc link-core.  The old-format moon.pkg does not carry a link/exports
+#   section, so the compiled WASM only exports "_start".  This script re-runs
+#   the link step with an explicit "-exported_functions" flag so all 27 getter/
+#   runner functions are visible to the browser.
+
+set -euo pipefail
+
+MOON_HOME="$HOME/.moon"
+CORE_BUNDLE="$MOON_HOME/lib/core/_build/wasm-gc/release/bundle"
+EXPORTS="init_simulation,run_all_steps,run_n_steps,get_nx,get_ny,get_nt,get_nit,get_re,get_dx,get_dy,get_dt,get_rho,get_nu,get_step_count,get_u_at,get_velocity_magnitude_at,get_v_at,get_p_at,get_u_center,get_v_center,get_p_center,get_divergence_norm,get_max_velocity_magnitude,get_max_u,get_max_v,get_max_p,get_min_p"
+
+MODE="${1:-debug}"
+if [[ "$MODE" == "release" ]]; then
+  BUILD_DIR="./_build/wasm-gc/release/build/cmd/main"
+  OPT_FLAGS=""
+  echo "[build_wasm] Building RELEASE wasm-gc..."
+  moon build --target wasm-gc --release 2>&1 | grep -v "^$"
+else
+  BUILD_DIR="./_build/wasm-gc/debug/build/cmd/main"
+  OPT_FLAGS="-O0 -g -source-map"
+  echo "[build_wasm] Building DEBUG wasm-gc..."
+  moon build --target wasm-gc 2>&1 | grep -v "^$"
+fi
+
+CORE_FILE="$BUILD_DIR/main.core"
+OUT_FILE="$BUILD_DIR/main.wasm"
+
+echo "[build_wasm] Re-linking $CORE_FILE -> $OUT_FILE with exported_functions..."
+moonc link-core \
+  "$CORE_BUNDLE/abort/abort.core" \
+  "$CORE_BUNDLE/core.core" \
+  "$CORE_FILE" \
+  -main "YuFenfen-ai/FlowLabLite/cmd/main" \
+  -o "$OUT_FILE" \
+  -exported_functions "$EXPORTS" \
+  -export-memory-name memory \
+  -pkg-config-path "./cmd/main/moon.pkg" \
+  -pkg-sources "YuFenfen-ai/FlowLabLite/cmd/main:./cmd/main" \
+  -pkg-sources "moonbitlang/core:$MOON_HOME/lib/core" \
+  -target wasm-gc \
+  $OPT_FLAGS
+
+echo "[build_wasm] Done: $OUT_FILE"
+echo "[build_wasm] Checking exports in WASM binary..."
+node - <<'JSEOF'
+const fs = require('fs');
+const paths = [
+  './_build/wasm-gc/release/build/cmd/main/main.wasm',
+  './_build/wasm-gc/debug/build/cmd/main/main.wasm'
+];
+for (const p of paths) {
+  if (!fs.existsSync(p)) continue;
+  const buf = Buffer.from(fs.readFileSync(p));
+  let off = 8;
+  const exports = [];
+  while (off < buf.length) {
+    const sid = buf[off++];
+    let sz = 0, sh = 0, b;
+    do { b = buf[off++]; sz |= (b & 0x7f) << sh; sh += 7; } while (b & 0x80);
+    if (sid === 7) {
+      let p2 = off;
+      let cnt = 0, sh2 = 0, b2;
+      do { b2 = buf[p2++]; cnt |= (b2 & 0x7f) << sh2; sh2 += 7; } while (b2 & 0x80);
+      for (let i = 0; i < cnt; i++) {
+        let nl = 0, sh3 = 0, b3;
+        do { b3 = buf[p2++]; nl |= (b3 & 0x7f) << sh3; sh3 += 7; } while (b3 & 0x80);
+        const name = buf.slice(p2, p2 + nl).toString('utf8');
+        p2 += nl; const kind = buf[p2++];
+        let idx = 0, sh4 = 0, b4;
+        do { b4 = buf[p2++]; idx |= (b4 & 0x7f) << sh4; sh4 += 7; } while (b4 & 0x80);
+        exports.push(name);
+      }
+      console.log('[build_wasm] WASM exports (' + exports.length + '):', exports.join(', '));
+      break;
+    }
+    off += sz;
+  }
+  break;
+}
+JSEOF
