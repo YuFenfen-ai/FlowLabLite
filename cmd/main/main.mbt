@@ -89,6 +89,67 @@ pub fn init_simulation() -> Unit {
   }
 }
 
+/// Read u-velocity at grid index (i=row, j=col).  Returns 0 for out-of-range.
+pub fn get_u_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_u[i][j] } else { 0.0 }
+}
+
+/// Read v-velocity at grid index (i=row, j=col).  Returns 0 for out-of-range.
+pub fn get_v_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_v[i][j] } else { 0.0 }
+}
+
+/// Read pressure at grid index (i=row, j=col).  Returns 0 for out-of-range.
+pub fn get_p_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_p[i][j] } else { 0.0 }
+}
+
+/// Return maximum absolute u-velocity over the whole grid.
+pub fn get_max_u() -> Double {
+  let mut m = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let v = g_u[i][j].abs()
+      if v > m { m = v }
+    }
+  }
+  m
+}
+
+/// Return maximum absolute v-velocity over the whole grid.
+pub fn get_max_v() -> Double {
+  let mut m = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let v = g_v[i][j].abs()
+      if v > m { m = v }
+    }
+  }
+  m
+}
+
+/// Return maximum pressure value over the whole grid.
+pub fn get_max_p() -> Double {
+  let mut m = g_p[0][0]
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      if g_p[i][j] > m { m = g_p[i][j] }
+    }
+  }
+  m
+}
+
+/// Return minimum pressure value over the whole grid.
+pub fn get_min_p() -> Double {
+  let mut m = g_p[0][0]
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      if g_p[i][j] < m { m = g_p[i][j] }
+    }
+  }
+  m
+}
+
 /// Run the full cavity-flow solver (nt steps) and store results in g_u/g_v/g_p.
 /// JS workflow:  init_simulation() → run_all_steps() → get_u_at/get_v_at/get_p_at
 pub fn run_all_steps() -> Unit {
