@@ -408,16 +408,18 @@
                 return data;
             }
 
-            /** Build config object from WASM exports. */
+            /** Build config object from all WASM constant exports. */
             _readConfigFromWasm() {
-                const wasm = this.wasmModule;
-                const nx = wasm.get_nx(), ny = wasm.get_ny(), nt = wasm.get_nt();
-                const re = wasm.get_re ? wasm.get_re() : 20.0;
+                const w = this.wasmModule;
+                const nx = w.get_nx(), ny = w.get_ny(), nt = w.get_nt();
                 return {
-                    nx, ny, nt, re,
-                    dx: 2.0 / (nx - 1),
-                    dy: 2.0 / (ny - 1),
-                    dt: 0.001, rho: 1.0, nu: 2.0 / re
+                    nx, ny, nt,
+                    dx: w.get_dx ? w.get_dx() : 2.0 / (nx - 1),
+                    dy: w.get_dy ? w.get_dy() : 2.0 / (ny - 1),
+                    dt:  w.get_dt  ? w.get_dt()  : 0.001,
+                    rho: w.get_rho ? w.get_rho() : 1.0,
+                    nu:  w.get_nu  ? w.get_nu()  : 0.1,
+                    re:  w.get_re  ? w.get_re()  : 20.0,
                 };
             }
 
