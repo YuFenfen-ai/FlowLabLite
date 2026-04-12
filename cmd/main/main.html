@@ -586,9 +586,11 @@
                 document.getElementById('centerV').textContent = centerV.toFixed(4);
                 document.getElementById('centerP').textContent = centerP.toFixed(4);
                 document.getElementById('centerMag').textContent = centerMag.toFixed(4);
-                // Update colorbar tick labels
+                // Update colorbar tick labels (use WASM max magnitude if available)
+                const velMax = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
+                    ? this.wasmModule.get_max_velocity_magnitude() : maxU;
                 document.getElementById('velMin').textContent = '0.0000';
-                document.getElementById('velMax').textContent = maxU.toFixed(4);
+                document.getElementById('velMax').textContent = velMax.toFixed(4);
                 if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
                 if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
             }
