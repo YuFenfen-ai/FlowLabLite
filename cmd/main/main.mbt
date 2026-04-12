@@ -39,6 +39,44 @@ let dt = 0.001
 pub fn now_seconds() -> Double {
   0.0
 }
+
+// ── Global simulation state (written by init_simulation / run_all_steps) ──
+// These are allocated once; JS calls init_simulation() before run_all_steps().
+let g_u : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 {
+    a[i] = Array::make(nx, 0.0)
+  }
+  a
+}
+
+let g_v : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 {
+    a[i] = Array::make(nx, 0.0)
+  }
+  a
+}
+
+let g_p : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 {
+    a[i] = Array::make(nx, 0.0)
+  }
+  a
+}
+
+// ── Primitive accessors exported to WASM ──
+
+/// Return grid width (nx).
+pub fn get_nx() -> Int { nx }
+
+/// Return grid height (ny).
+pub fn get_ny() -> Int { ny }
+
+/// Return total time-step count (nt).
+pub fn get_nt() -> Int { nt }
+
 // Helper function to create 2D array filled with zeros
 fn create_zeros_2d(rows : Int, cols : Int) -> Array[Array[Double]] {
   let result = Array::make(rows, Array::make(cols, 0.0))
