@@ -404,10 +404,9 @@ fn cavity_flow_array(
 //b.bench(fn() { b.keep(cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)) })
 //}
 
+// Fibonacci helper – used only by the bench test in main_bench.mbt.
 fn fib(n : Int) -> Int {
-  if n < 2 {
-    return n
-  }
+  if n < 2 { return n }
   return fib(n - 1) + fib(n - 2)
 }
 
