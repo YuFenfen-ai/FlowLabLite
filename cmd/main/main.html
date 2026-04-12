@@ -487,10 +487,9 @@
                         }
                         
                         const magnitude = Math.sqrt(u * u + v * v);
-                        
-                        data.push({
-                            x, y, u, v, magnitude, i, j
-                        });
+                        // Mock pressure: sinusoidal pattern for demonstration
+                        const p = Math.sin(Math.PI * x / 2) * Math.cos(Math.PI * y / 2) * 0.1;
+                        data.push({ x, y, u, v, p, magnitude, i, j });
                     }
                 }
                 
@@ -516,10 +515,10 @@
                         const v = (j - 10.0) / 10.0;
                         const magnitude = Math.sqrt(u * u + v * v);
                         
-                        data.push({ x, y, u, v, magnitude });
+                        const p = (i - 10) * 0.005;
+                        data.push({ x, y, u, v, p, magnitude, i, j });
                     }
                 }
-                
                 return JSON.stringify(data);
             }
 
