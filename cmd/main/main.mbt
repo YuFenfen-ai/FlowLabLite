@@ -89,6 +89,23 @@ pub fn init_simulation() -> Unit {
   }
 }
 
+/// Run the full cavity-flow solver (nt steps) and store results in g_u/g_v/g_p.
+/// JS workflow:  init_simulation() → run_all_steps() → get_u_at/get_v_at/get_p_at
+pub fn run_all_steps() -> Unit {
+  let (u_out, v_out, p_out) = cavity_flow_array(
+    nt, g_u, g_v, dt, dx, dy, g_p, rho, nu,
+  )
+  // Copy results back to globals (cavity_flow_array mutates in-place, so
+  // u_out is the same object as g_u, but we assign explicitly for clarity).
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      g_u[i][j] = u_out[i][j]
+      g_v[i][j] = v_out[i][j]
+      g_p[i][j] = p_out[i][j]
+    }
+  }
+}
+
 // Helper function to create 2D array filled with zeros
 fn create_zeros_2d(rows : Int, cols : Int) -> Array[Array[Double]] {
   let result = Array::make(rows, Array::make(cols, 0.0))
