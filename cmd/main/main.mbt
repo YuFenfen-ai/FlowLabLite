@@ -83,6 +83,9 @@ pub fn get_nt() -> Int { nt }
 /// Return Reynolds number Re = u_lid * L / nu  (u_lid=1, L=2).
 pub fn get_re() -> Double { 1.0 * 2.0 / nu }
 
+/// Return number of pressure Poisson inner iterations per time step (nit).
+pub fn get_nit() -> Int { nit }
+
 /// Return grid spacing in x.
 pub fn get_dx() -> Double { dx }
 
