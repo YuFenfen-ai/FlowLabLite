@@ -308,8 +308,19 @@
                     }
                     if (!response) throw new Error('WASM file not found – run: moon build --target wasm-gc');
                     const wasmBytes = await response.arrayBuffer();
-                    const wasmModule = await WebAssembly.instantiate(wasmBytes);
-                    
+
+                    // MoonBit wasm-gc needs spectest/env/moonbit:ffi imports.
+                    // Use a Proxy so any unknown import returns a no-op instead of throwing.
+                    const noopFn = () => {};
+                    const makeNoopModule = () => new Proxy({}, { get: () => noopFn });
+                    const importObject = new Proxy({
+                        spectest: { print_char: noopFn, print_i32: noopFn, print_f64: noopFn },
+                        env: { println: (s) => console.log('[mbt]', s) },
+                        'moonbit:ffi': { println: (s) => console.log('[mbt]', s) },
+                    }, { get: (t, k) => k in t ? t[k] : makeNoopModule() });
+
+                    const wasmModule = await WebAssembly.instantiate(wasmBytes, importObject);
+
                     this.wasmModule = wasmModule.instance.exports;
                     this.updateStatus('WebAssembly module loaded successfully', 'success');
                     
