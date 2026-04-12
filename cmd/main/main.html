@@ -395,12 +395,13 @@
                         const u = wasm.get_u_at(i, j);
                         const v = wasm.get_v_at(i, j);
                         const p = wasm.get_p_at(i, j);
+                        const magnitude = wasm.get_velocity_magnitude_at
+                            ? wasm.get_velocity_magnitude_at(i, j)
+                            : Math.sqrt(u * u + v * v);
                         data.push({
                             x: j / (nx - 1) * 2.0,
                             y: i / (ny - 1) * 2.0,
-                            u, v, p,
-                            magnitude: Math.sqrt(u * u + v * v),
-                            i, j
+                            u, v, p, magnitude, i, j
                         });
                     }
                 }
