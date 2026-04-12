@@ -8,9 +8,6 @@
   "link": {
     "wasm-gc": {
       "exports": [
-        "get_simulation_config",
-        "run_cavity_simulation",
-        "run_simple_simulation",
         "init_simulation",
         "run_all_steps",
         "get_nx",
