@@ -10,6 +10,7 @@
       "exports": [
         "init_simulation",
         "run_all_steps",
+        "run_n_steps",
         "get_nx",
         "get_ny",
         "get_nt",
@@ -27,6 +28,7 @@
       "exports": [
         "init_simulation",
         "run_all_steps",
+        "run_n_steps",
         "get_nx",
         "get_ny",
         "get_nt",

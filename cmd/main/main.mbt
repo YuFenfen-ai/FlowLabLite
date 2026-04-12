@@ -150,6 +150,22 @@ pub fn get_min_p() -> Double {
   m
 }
 
+/// Run exactly n time steps starting from the current global state.
+/// JS can call this in chunks to implement progressive visualization.
+/// init_simulation() must be called once before the first chunk.
+pub fn run_n_steps(n : Int) -> Unit {
+  let (u_out, v_out, p_out) = cavity_flow_array(
+    n, g_u, g_v, dt, dx, dy, g_p, rho, nu,
+  )
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      g_u[i][j] = u_out[i][j]
+      g_v[i][j] = v_out[i][j]
+      g_p[i][j] = p_out[i][j]
+    }
+  }
+}
+
 /// Run the full cavity-flow solver (nt steps) and store results in g_u/g_v/g_p.
 /// JS workflow:  init_simulation() → run_all_steps() → get_u_at/get_v_at/get_p_at
 pub fn run_all_steps() -> Unit {
