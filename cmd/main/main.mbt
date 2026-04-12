@@ -36,7 +36,8 @@ let dt = 0.001
 // this. For now provide a safe fallback implementation so `moon build` succeeds
 // in environments without the host symbol. The fallback returns 0.0 meaning
 // "timing unavailable".
-pub fn now_seconds() -> Double {
+// Marked priv so it does not appear in the public API; main() calls it internally.
+fn now_seconds() -> Double {
   0.0
 }
 
