@@ -66,8 +66,8 @@ let g_p : Array[Array[Double]] = {
   a
 }
 
-// ── Global step counter ──
-let mut g_steps_done : Int = 0
+// ── Global step counter (single-element array, writable at global scope) ──
+let g_steps : Array[Int] = [0]
 
 // ── Primitive accessors exported to WASM ──
 
@@ -81,12 +81,12 @@ pub fn get_ny() -> Int { ny }
 pub fn get_nt() -> Int { nt }
 
 /// Return how many solver steps have been executed since the last init_simulation().
-pub fn get_step_count() -> Int { g_steps_done }
+pub fn get_step_count() -> Int { g_steps[0] }
 
 /// Reset the global u, v, p arrays to zero so a fresh simulation can start.
 /// JS must call this before run_all_steps().
 pub fn init_simulation() -> Unit {
-  g_steps_done = 0
+  g_steps[0] = 0
   for i = 0; i < ny; i = i + 1 {
     for j = 0; j < nx; j = j + 1 {
       g_u[i][j] = 0.0
@@ -171,7 +171,7 @@ pub fn run_n_steps(n : Int) -> Unit {
       g_p[i][j] = p_out[i][j]
     }
   }
-  g_steps_done = g_steps_done + n
+  g_steps[0] = g_steps[0] + n
 }
 
 /// Run the full cavity-flow solver (nt steps) and store results in g_u/g_v/g_p.
@@ -187,7 +187,7 @@ pub fn run_all_steps() -> Unit {
       g_p[i][j] = p_out[i][j]
     }
   }
-  g_steps_done = nt
+  g_steps[0] = nt
 }
 
 // Helper function to create 2D array filled with zeros
