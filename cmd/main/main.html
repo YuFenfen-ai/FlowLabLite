@@ -513,34 +513,35 @@
             }
 
             updateFieldStatistics() {
-                let maxU = 0, maxV = 0, maxMag = 0;
-                let centerU = 0, centerV = 0, centerMag = 0;
-                
-                // 计算统计数据
+                let maxU = 0, maxV = 0;
+                let maxP = -Infinity, minP = Infinity;
+                let centerU = 0, centerV = 0, centerP = 0, centerMag = 0;
+                const nx = this.config ? this.config.nx : 21;
+                const ny = this.config ? this.config.ny : 21;
+                const ci = Math.floor(ny / 2), cj = Math.floor(nx / 2);
+
                 this.simulationData.forEach(point => {
                     maxU = Math.max(maxU, Math.abs(point.u));
                     maxV = Math.max(maxV, Math.abs(point.v));
-                    maxMag = Math.max(maxMag, point.magnitude);
-                    
-                    // 找到中心点数据
-                    if (point.i !== undefined && point.j !== undefined) {
-                        const nx = this.config ? this.config.nx : 21;
-                        const ny = this.config ? this.config.ny : 21;
-                        if (point.i === Math.floor(ny / 2) && point.j === Math.floor(nx / 2)) {
-                            centerU = point.u;
-                            centerV = point.v;
-                            centerMag = point.magnitude;
-                        }
+                    if (point.p !== undefined) {
+                        if (point.p > maxP) maxP = point.p;
+                        if (point.p < minP) minP = point.p;
+                    }
+                    if (point.i === ci && point.j === cj) {
+                        centerU   = point.u;
+                        centerV   = point.v;
+                        centerP   = point.p !== undefined ? point.p : 0;
+                        centerMag = point.magnitude;
                     }
                 });
-                
+
                 document.getElementById('maxU').textContent = maxU.toFixed(4);
                 document.getElementById('maxV').textContent = maxV.toFixed(4);
-                document.getElementById('maxP').textContent = 'N/A'; // 压力数据暂时不可用
-                document.getElementById('minP').textContent = 'N/A';
+                document.getElementById('maxP').textContent = isFinite(maxP) ? maxP.toFixed(4) : 'N/A';
+                document.getElementById('minP').textContent = isFinite(minP) ? minP.toFixed(4) : 'N/A';
                 document.getElementById('centerU').textContent = centerU.toFixed(4);
                 document.getElementById('centerV').textContent = centerV.toFixed(4);
-                document.getElementById('centerP').textContent = 'N/A';
+                document.getElementById('centerP').textContent = centerP.toFixed(4);
                 document.getElementById('centerMag').textContent = centerMag.toFixed(4);
             }
             visualizeResults() {
