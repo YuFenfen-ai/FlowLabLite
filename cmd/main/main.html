@@ -563,28 +563,38 @@
                 
                 if (!this.simulationData) return;
                 
-                // 找到最大速度幅值用于归一化颜色
-                const maxMagnitude = Math.max(...this.simulationData.map(p => p.magnitude));
-                
-                // 绘制颜色场（背景）
+                // Compute max magnitude for colour normalisation
+                const maxMagnitude = Math.max(...this.simulationData.map(p => p.magnitude)) || 1;
+
+                // Build a 2-D lookup: grid[i][j] = point
+                const nx = this.config ? this.config.nx : 41;
+                const ny = this.config ? this.config.ny : 41;
+                const grid = Array.from({ length: ny }, () => new Array(nx));
+                this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
+                // Fill every canvas pixel by bilinear lookup into the grid
                 const imageData = ctx.createImageData(width, height);
-                
-                this.simulationData.forEach(point => {
-                    const px = Math.floor((point.x / 2.0) * (width - 1));
-                    const py = Math.floor((1.0 - point.y / 2.0) * (height - 1)); // 翻转Y轴
-                    
-                    if (px >= 0 && px < width && py >= 0 && py < height) {
-                        const intensity = point.magnitude / maxMagnitude;
-                        const color = this.velocityMagnitudeToColor(intensity);
-                        
-                        const index = (py * width + px) * 4;
-                        imageData.data[index] = color.r;
-                        imageData.data[index + 1] = color.g;
-                        imageData.data[index + 2] = color.b;
-                        imageData.data[index + 3] = 255;
+                for (let py = 0; py < height; py++) {
+                    for (let px = 0; px < width; px++) {
+                        // Grid coordinates (fractional)
+                        const gx = px / (width  - 1) * (nx - 1);
+                        const gy = (1 - py / (height - 1)) * (ny - 1); // Y flipped
+                        const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
+                        const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
+                        const tx = gx - j0, ty = gy - i0;
+                        const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                        const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                        if (!p00 || !p10 || !p01 || !p11) continue;
+                        const mag = p00.magnitude * (1-tx)*(1-ty) + p01.magnitude * tx*(1-ty) +
+                                    p10.magnitude * (1-tx)*ty     + p11.magnitude * tx*ty;
+                        const color = this.velocityMagnitudeToColor(mag / maxMagnitude);
+                        const idx = (py * width + px) * 4;
+                        imageData.data[idx]     = color.r;
+                        imageData.data[idx + 1] = color.g;
+                        imageData.data[idx + 2] = color.b;
+                        imageData.data[idx + 3] = 255;
                     }
-                });
-                
+                }
                 ctx.putImageData(imageData, 0, 0);
                 
                 // Draw velocity vectors – scale so the longest arrow spans ~one cell width
