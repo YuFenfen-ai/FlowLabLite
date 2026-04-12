@@ -622,8 +622,10 @@
                 
                 if (!this.simulationData) return;
                 
-                // Compute max magnitude for colour normalisation
-                const maxMagnitude = Math.max(...this.simulationData.map(p => p.magnitude)) || 1;
+                // Compute max magnitude for colour normalisation (use WASM if available)
+                const maxMagnitude = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
+                    ? (this.wasmModule.get_max_velocity_magnitude() || 1)
+                    : (Math.max(...this.simulationData.map(p => p.magnitude)) || 1);
 
                 // Build a 2-D lookup: grid[i][j] = point
                 const nx = this.config ? this.config.nx : 41;
