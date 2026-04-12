@@ -587,6 +587,17 @@
             clearCanvases() {
                 this.velocityCtx.clearRect(0, 0, this.velocityCanvas.width, this.velocityCanvas.height);
                 this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
+                // Reset info panel to initial state
+                ['maxU','maxV','maxP','minP','centerU','centerV','centerP','centerMag',
+                 'gridSize','timeSteps','density','viscosity','timeStep','reynolds']
+                    .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '-'; });
+                document.getElementById('velMin').textContent = '0.0000';
+                document.getElementById('velMax').textContent = '–';
+                document.getElementById('presMin').textContent = '–';
+                document.getElementById('presMax').textContent = '–';
+                this.simulationData = null;
+                this.config = null;
+                this.updateStatus('Canvases cleared – press Run to start', 'loading');
             }
 
             drawVelocityField() {
