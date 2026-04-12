@@ -283,10 +283,6 @@ fn fib(n : Int) -> Int {
   return fib(n - 1) + fib(n - 2)
 }
 
-test (b : @bench.T) {
-  b.bench(fn() { b.keep(fib(20)) })
-}
-
 // Function to write velocity data to a text file
 fn write_velocity_to_file(u : Array[Array[Double]], v : Array[Array[Double]], 
                          x : Array[Array[Double]], y : Array[Array[Double]], 
