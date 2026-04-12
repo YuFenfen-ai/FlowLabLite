@@ -22,6 +22,23 @@
         "get_min_p"
       ],
       "export-memory-name": "memory"
+    },
+    "wasm": {
+      "exports": [
+        "init_simulation",
+        "run_all_steps",
+        "get_nx",
+        "get_ny",
+        "get_nt",
+        "get_u_at",
+        "get_v_at",
+        "get_p_at",
+        "get_max_u",
+        "get_max_v",
+        "get_max_p",
+        "get_min_p"
+      ],
+      "export-memory-name": "memory"
     }
   }
 }
