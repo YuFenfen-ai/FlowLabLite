@@ -233,6 +233,10 @@
                         <span class="parameter-value" id="viscosity">-</span>
                         <span class="parameter-label">Time Step (dt):</span>
                         <span class="parameter-value" id="timeStep">-</span>
+                        <span class="parameter-label">Poisson iters:</span>
+                        <span class="parameter-value" id="nit">-</span>
+                        <span class="parameter-label">Steps done:</span>
+                        <span class="parameter-value" id="stepsDone">-</span>
                     </div>
                 </div>
                 
@@ -532,7 +536,12 @@
                     document.getElementById('density').textContent = this.config.rho.toFixed(2);
                     document.getElementById('viscosity').textContent = this.config.nu.toFixed(3);
                     document.getElementById('timeStep').textContent = this.config.dt.toFixed(6);
-                    
+                    const nit = this.wasmModule && this.wasmModule.get_nit ? this.wasmModule.get_nit() : '-';
+                    document.getElementById('nit').textContent = nit;
+                    const steps = this.wasmModule && this.wasmModule.get_step_count
+                        ? this.wasmModule.get_step_count() : '-';
+                    document.getElementById('stepsDone').textContent = steps;
+
                     const Re = this.config.re !== undefined
                         ? this.config.re
                         : (this.config.rho * 1.0 * 2.0) / this.config.nu;
@@ -592,7 +601,7 @@
                 this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
                 // Reset info panel to initial state
                 ['maxU','maxV','maxP','minP','centerU','centerV','centerP','centerMag',
-                 'gridSize','timeSteps','density','viscosity','timeStep','reynolds']
+                 'gridSize','timeSteps','density','viscosity','timeStep','reynolds','nit','stepsDone']
                     .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '-'; });
                 document.getElementById('velMin').textContent = '0.0000';
                 document.getElementById('velMax').textContent = '–';
