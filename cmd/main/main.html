@@ -213,7 +213,7 @@
                 <canvas id="pressureCanvas" width="500" height="500"></canvas>
                 <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
                     <span id="presMin" style="font-size:11px;color:#555">–</span>
-                    <div class="colorbar" style="background:linear-gradient(to top,#0000ff,#00ff00,#ff0000)"></div>
+                    <div class="colorbar" style="background:linear-gradient(to top,#0000ff 0%,#00ffff 50%,#ff8000 75%,#ff0000 100%)"></div>
                     <span id="presMax" style="font-size:11px;color:#555">–</span>
                 </div>
                 <div class="colorbar-label">Pressure (Pa)</div>
@@ -756,16 +756,23 @@
                 ctx.fillText(`min: ${minP.toFixed(4)}`, 4, height - 4);
             }
 
-            /** Map 0→1 to a blue→red diverging colour map. */
+            /** 4-stop diverging colourmap: blue → cyan → orange → red */
             pressureToColor(t) {
                 t = Math.max(0, Math.min(1, t));
-                if (t < 0.5) {
-                    const s = t / 0.5;
-                    return { r: 0, g: Math.floor(s * 255), b: 255 };
-                } else {
-                    const s = (t - 0.5) / 0.5;
-                    return { r: Math.floor(s * 255), g: Math.floor((1 - s) * 255), b: 0 };
-                }
+                const stops = [
+                    [0,   0, 255],   // blue  (min pressure)
+                    [0, 255, 255],   // cyan
+                    [255,128,  0],   // orange
+                    [255,  0,  0],   // red   (max pressure)
+                ];
+                const seg = t * (stops.length - 1);
+                const lo = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
+                const s = seg - lo;
+                return {
+                    r: Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * s),
+                    g: Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * s),
+                    b: Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * s),
+                };
             }
 
             /** 5-stop jet colourmap: dark-blue → blue → cyan → green → yellow → red */
