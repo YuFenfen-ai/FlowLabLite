@@ -623,21 +623,58 @@
                 const ctx = this.pressureCtx;
                 const width = this.pressureCanvas.width;
                 const height = this.pressureCanvas.height;
-                
-                // 压力场可视化（这里使用模拟数据，因为主代码中压力数据不直接可用）
-                ctx.fillStyle = 'rgba(200, 200, 200, 0.3)';
-                ctx.fillRect(0, 0, width, height);
-                
-                ctx.fillStyle = '#666';
-                ctx.font = '16px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('Pressure Field', width / 2, height / 2 - 10);
-                ctx.fillText('(Visualization Placeholder)', width / 2, height / 2 + 10);
-                
-                // 绘制边界
+
+                if (!this.simulationData) return;
+
+                // Find pressure range for normalisation
+                let minP = Infinity, maxP = -Infinity;
+                this.simulationData.forEach(pt => {
+                    if (pt.p !== undefined) {
+                        if (pt.p < minP) minP = pt.p;
+                        if (pt.p > maxP) maxP = pt.p;
+                    }
+                });
+                const rangeP = maxP - minP || 1;
+
+                // Paint pixel-level pressure colour map (cool → warm)
+                const imageData = ctx.createImageData(width, height);
+                this.simulationData.forEach(point => {
+                    if (point.p === undefined) return;
+                    const px = Math.floor((point.x / 2.0) * (width - 1));
+                    const py = Math.floor((1.0 - point.y / 2.0) * (height - 1));
+                    if (px < 0 || px >= width || py < 0 || py >= height) return;
+                    const t = (point.p - minP) / rangeP;
+                    const color = this.pressureToColor(t);
+                    const idx = (py * width + px) * 4;
+                    imageData.data[idx]     = color.r;
+                    imageData.data[idx + 1] = color.g;
+                    imageData.data[idx + 2] = color.b;
+                    imageData.data[idx + 3] = 255;
+                });
+                ctx.putImageData(imageData, 0, 0);
+
+                // Border + labels
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(0, 0, width, height);
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.font = '11px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(`max: ${maxP.toFixed(4)}`, 4, 14);
+                ctx.textAlign = 'left';
+                ctx.fillText(`min: ${minP.toFixed(4)}`, 4, height - 4);
+            }
+
+            /** Map 0→1 to a blue→red diverging colour map. */
+            pressureToColor(t) {
+                t = Math.max(0, Math.min(1, t));
+                if (t < 0.5) {
+                    const s = t / 0.5;
+                    return { r: 0, g: Math.floor(s * 255), b: 255 };
+                } else {
+                    const s = (t - 0.5) / 0.5;
+                    return { r: Math.floor(s * 255), g: Math.floor((1 - s) * 255), b: 0 };
+                }
             }
 
             velocityMagnitudeToColor(intensity) {
