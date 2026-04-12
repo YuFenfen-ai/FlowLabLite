@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2D Cavity Flow Visualization</title>
+    <title>FlowLabLite – 2D Lid-Driven Cavity Flow (MoonBit / WebAssembly)</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -179,8 +179,11 @@
 </head>
 <body>
     <div class="container">
-        <h1>🌊 2D Cavity Flow Simulation</h1>
-        <p class="subtitle">WebAssembly-powered fluid dynamics visualization using MoonBit</p>
+        <h1>FlowLabLite – 2D Lid-Driven Cavity Flow</h1>
+        <p class="subtitle">MoonBit solver compiled to WebAssembly · open-source CFD demo</p>
+        <p style="text-align:center;font-size:12px;color:#888;margin-top:-18px;margin-bottom:10px;">
+            Build first: <code>moon build --target wasm-gc</code> &nbsp;|&nbsp; Then serve from project root with any HTTP server
+        </p>
         
         <div class="controls">
             <button id="runSimulation" class="primary-btn">🚀 Run Full Simulation</button>
