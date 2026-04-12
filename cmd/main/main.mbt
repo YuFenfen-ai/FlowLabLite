@@ -190,6 +190,15 @@ pub fn get_min_p() -> Double {
   m
 }
 
+/// Return u at the grid centre (ny/2, nx/2) – convenient for convergence monitoring.
+pub fn get_u_center() -> Double { g_u[ny / 2][nx / 2] }
+
+/// Return v at the grid centre.
+pub fn get_v_center() -> Double { g_v[ny / 2][nx / 2] }
+
+/// Return pressure at the grid centre.
+pub fn get_p_center() -> Double { g_p[ny / 2][nx / 2] }
+
 /// Return mean absolute divergence ∑|∂u/∂x + ∂v/∂y| / (interior cells) as a
 /// rough indicator of how well mass conservation is satisfied after the last step.
 pub fn get_divergence_norm() -> Double {
