@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowLabLite – Local Results Viewer</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 { text-align: center; color: #333; margin-bottom: 10px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 20px; }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .primary-btn { background-color: #28a745; color: white; }
+        .primary-btn:hover { background-color: #218838; }
+        .secondary-btn { background-color: #6c757d; color: white; }
+        .secondary-btn:hover { background-color: #545b62; }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .status.loading { background-color: #fff3cd; color: #856404; }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error   { background-color: #f8d7da; color: #721c24; }
+        .visualization-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .canvas-container {
+            flex: 1;
+            text-align: center;
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-width: 100%;
+            height: auto;
+        }
+        .info-panel {
+            min-width: 300px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .info-section { margin-bottom: 20px; }
+        .info-section h3 {
+            margin-top: 0;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 5px;
+        }
+        .parameter-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 14px;
+        }
+        .parameter-label { font-weight: bold; color: #6c757d; }
+        .parameter-value { color: #212529; }
+        .colorbar {
+            width: 20px;
+            height: 200px;
+            background: linear-gradient(to top,
+                #000080 0%, #0000ff 20%, #00ffff 40%,
+                #00ff00 60%, #ffff00 80%, #ff0000 100%);
+            border: 1px solid #ddd;
+            margin: 10px auto;
+        }
+        .colorbar-label {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .drop-zone {
+            border: 3px dashed #ccc;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            color: #999;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .drop-zone.dragover {
+            border-color: #28a745;
+            background: #e8f5e9;
+            color: #28a745;
+        }
+        .drop-zone input[type="file"] { display: none; }
+        .usage-hint {
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #495057;
+            line-height: 1.6;
+        }
+        .usage-hint code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        @media (max-width: 768px) {
+            .visualization-container { flex-direction: column; }
+            .info-panel { min-width: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FlowLabLite – Local Results Viewer</h1>
+        <p class="subtitle">Load locally computed simulation results (JSON) for browser visualization</p>
+
+        <div class="usage-hint">
+            <strong>Usage:</strong><br>
+            1. Run locally: <code>moon run cmd/main --target wasm 2>&amp;1 | sed -n '/===JSON_DATA_START===/,/===JSON_DATA_END===/p' | grep -v '===JSON_DATA' &gt; results.json</code><br>
+            2. Or on Windows PowerShell: <code>moon run cmd/main --target wasm 2>&amp;1 | Out-File output.txt; then extract JSON block</code><br>
+            3. Load the <code>results.json</code> file below, or paste JSON directly.
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+            <p>Drag &amp; drop <strong>results.json</strong> here, or click to browse</p>
+            <input type="file" id="fileInput" accept=".json,.txt">
+        </div>
+
+        <div class="controls">
+            <button id="pasteBtn" class="primary-btn">Paste JSON from clipboard</button>
+            <button id="loadSample" class="secondary-btn">Load built-in sample</button>
+            <button id="clearBtn" class="secondary-btn">Clear</button>
+            <button id="downloadCsv" class="secondary-btn">Download CSV</button>
+        </div>
+
+        <div id="status" class="status loading">No data loaded – load a JSON file or paste data</div>
+
+        <div class="visualization-container">
+            <div class="canvas-container">
+                <h3>Velocity Magnitude</h3>
+                <canvas id="velocityCanvas" width="500" height="500"></canvas>
+                <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
+                    <span id="velMin" style="font-size:11px;color:#555">0.0000</span>
+                    <div class="colorbar"></div>
+                    <span id="velMax" style="font-size:11px;color:#555">--</span>
+                </div>
+                <div class="colorbar-label">Velocity Magnitude (m/s)</div>
+            </div>
+
+            <div class="canvas-container">
+                <h3>Pressure Field</h3>
+                <canvas id="pressureCanvas" width="500" height="500"></canvas>
+                <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
+                    <span id="presMin" style="font-size:11px;color:#555">--</span>
+                    <div class="colorbar" style="background:linear-gradient(to top,#0000ff 0%,#00ffff 50%,#ff8000 75%,#ff0000 100%)"></div>
+                    <span id="presMax" style="font-size:11px;color:#555">--</span>
+                </div>
+                <div class="colorbar-label">Pressure (Pa)</div>
+            </div>
+
+            <div class="info-panel">
+                <div class="info-section">
+                    <h3>Simulation Parameters</h3>
+                    <div class="parameter-grid">
+                        <span class="parameter-label">Grid Size:</span>
+                        <span class="parameter-value" id="gridSize">-</span>
+                        <span class="parameter-label">Time Steps:</span>
+                        <span class="parameter-value" id="timeSteps">-</span>
+                        <span class="parameter-label">Reynolds Number:</span>
+                        <span class="parameter-value" id="reynolds">-</span>
+                        <span class="parameter-label">Density:</span>
+                        <span class="parameter-value" id="density">-</span>
+                        <span class="parameter-label">Viscosity:</span>
+                        <span class="parameter-value" id="viscosity">-</span>
+                        <span class="parameter-label">Time Step (dt):</span>
+                        <span class="parameter-value" id="timeStep">-</span>
+                        <span class="parameter-label">Poisson iters:</span>
+                        <span class="parameter-value" id="nit">-</span>
+                        <span class="parameter-label">Elapsed (s):</span>
+                        <span class="parameter-value" id="elapsed">-</span>
+                        <span class="parameter-label">|div(u)| avg:</span>
+                        <span class="parameter-value" id="divNorm">-</span>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h3>Field Statistics</h3>
+                    <div class="parameter-grid">
+                        <span class="parameter-label">Max |u|:</span>
+                        <span class="parameter-value" id="maxU">-</span>
+                        <span class="parameter-label">Max |v|:</span>
+                        <span class="parameter-value" id="maxV">-</span>
+                        <span class="parameter-label">Max Pressure:</span>
+                        <span class="parameter-value" id="maxP">-</span>
+                        <span class="parameter-label">Min Pressure:</span>
+                        <span class="parameter-value" id="minP">-</span>
+                        <span class="parameter-label">Max |V|:</span>
+                        <span class="parameter-value" id="maxMag">-</span>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h3>Center Point Data</h3>
+                    <div class="parameter-grid">
+                        <span class="parameter-label">u velocity:</span>
+                        <span class="parameter-value" id="centerU">-</span>
+                        <span class="parameter-label">v velocity:</span>
+                        <span class="parameter-value" id="centerV">-</span>
+                        <span class="parameter-label">Pressure:</span>
+                        <span class="parameter-value" id="centerP">-</span>
+                        <span class="parameter-label">|V| magnitude:</span>
+                        <span class="parameter-value" id="centerMag">-</span>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h3>About</h3>
+                    <p style="font-size:12px;color:#6c757d;line-height:1.4;">
+                        This viewer loads JSON data produced by the local MoonBit solver
+                        (<code>moon run cmd/main --target wasm</code>) and renders
+                        velocity and pressure fields identical to the WASM-based main.html.
+                    </p>
+                    <p style="font-size:11px;color:#999;line-height:1.4;margin-top:8px;">
+                        Solver: MoonBit (local run)<br>
+                        Author: Fenfen Yu<br>
+                        License: Apache-2.0
+                    </p>
+                </div>
+            </div>
+        </div>
+        <p style="text-align:center;font-size:11px;color:#aaa;margin-top:12px;">
+            FlowLabLite &copy; 2026 Ezhou Hi-Modeling Technology Co., Ltd. &nbsp;|&nbsp; Apache-2.0
+        </p>
+    </div>
+
+    <script>
+    (function() {
+        const velCanvas = document.getElementById('velocityCanvas');
+        const presCanvas = document.getElementById('pressureCanvas');
+        const velCtx = velCanvas.getContext('2d');
+        const presCtx = presCanvas.getContext('2d');
+        let currentData = null;
+
+        // ── File loading ──
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+        document.getElementById('pasteBtn').addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                loadJSON(text);
+            } catch (err) {
+                // Fallback: prompt
+                const text = prompt('Paste JSON data:');
+                if (text) loadJSON(text);
+            }
+        });
+
+        document.getElementById('loadSample').addEventListener('click', loadSampleData);
+        document.getElementById('clearBtn').addEventListener('click', clearAll);
+        document.getElementById('downloadCsv').addEventListener('click', downloadCsv);
+
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = e => loadJSON(e.target.result);
+            reader.readAsText(file);
+        }
+
+        function loadJSON(text) {
+            try {
+                // Try to extract JSON from output that contains markers
+                let jsonStr = text;
+                const startMarker = '===JSON_DATA_START===';
+                const endMarker = '===JSON_DATA_END===';
+                const si = text.indexOf(startMarker);
+                const ei = text.indexOf(endMarker);
+                if (si !== -1 && ei !== -1) {
+                    jsonStr = text.substring(si + startMarker.length, ei).trim();
+                }
+                const data = JSON.parse(jsonStr);
+                if (!data.grid || !data.config) {
+                    throw new Error('JSON must contain "config" and "grid" fields');
+                }
+                currentData = data;
+                updateStatus('Data loaded: ' + data.grid.length + ' grid points', 'success');
+                updateDisplay();
+                visualize();
+            } catch (err) {
+                updateStatus('Failed to parse JSON: ' + err.message, 'error');
+            }
+        }
+
+        function updateStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = 'status ' + type;
+        }
+
+        function updateDisplay() {
+            const c = currentData.config;
+            const s = currentData.statistics;
+            document.getElementById('gridSize').textContent = c.nx + ' x ' + c.ny;
+            document.getElementById('timeSteps').textContent = c.nt;
+            document.getElementById('reynolds').textContent = (c.re || (c.rho * 2.0 / c.nu)).toFixed(1);
+            document.getElementById('density').textContent = c.rho.toFixed(2);
+            document.getElementById('viscosity').textContent = c.nu.toFixed(3);
+            document.getElementById('timeStep').textContent = c.dt.toFixed(6);
+            document.getElementById('nit').textContent = c.nit;
+            document.getElementById('elapsed').textContent =
+                s.elapsed_seconds > 0 ? s.elapsed_seconds.toFixed(3) : 'N/A';
+            document.getElementById('divNorm').textContent = s.divergence_norm.toExponential(3);
+            document.getElementById('maxU').textContent = s.max_u.toFixed(4);
+            document.getElementById('maxV').textContent = s.max_v.toFixed(4);
+            document.getElementById('maxP').textContent = s.max_p.toFixed(4);
+            document.getElementById('minP').textContent = s.min_p.toFixed(4);
+            document.getElementById('maxMag').textContent = s.max_velocity_magnitude.toFixed(4);
+            document.getElementById('centerU').textContent = s.center_u.toFixed(6);
+            document.getElementById('centerV').textContent = s.center_v.toFixed(6);
+            document.getElementById('centerP').textContent = s.center_p.toFixed(6);
+            const cm = Math.sqrt(s.center_u * s.center_u + s.center_v * s.center_v);
+            document.getElementById('centerMag').textContent = cm.toFixed(6);
+            document.getElementById('velMin').textContent = '0.0000';
+            document.getElementById('velMax').textContent = s.max_velocity_magnitude.toFixed(4);
+            document.getElementById('presMin').textContent = s.min_p.toFixed(4);
+            document.getElementById('presMax').textContent = s.max_p.toFixed(4);
+        }
+
+        // ── Visualization (same algorithms as main.html) ──
+
+        function visualize() {
+            if (!currentData) return;
+            drawVelocityField();
+            drawPressureField();
+        }
+
+        function drawVelocityField() {
+            const data = currentData;
+            const nx = data.config.nx, ny = data.config.ny;
+            const w = velCanvas.width, h = velCanvas.height;
+            const maxMag = data.statistics.max_velocity_magnitude || 1;
+
+            // Build grid
+            const grid = Array.from({length: ny}, () => new Array(nx));
+            data.grid.forEach(pt => { grid[pt.i][pt.j] = pt; });
+
+            // Bilinear fill
+            const imageData = velCtx.createImageData(w, h);
+            for (let py = 0; py < h; py++) {
+                for (let px = 0; px < w; px++) {
+                    const gx = px / (w - 1) * (nx - 1);
+                    const gy = (1 - py / (h - 1)) * (ny - 1);
+                    const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
+                    const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
+                    const tx = gx - j0, ty = gy - i0;
+                    const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                    const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                    if (!p00 || !p10 || !p01 || !p11) continue;
+                    const mag = p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
+                                p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty;
+                    const color = jetColor(mag / maxMag);
+                    const idx = (py * w + px) * 4;
+                    imageData.data[idx]     = color[0];
+                    imageData.data[idx + 1] = color[1];
+                    imageData.data[idx + 2] = color[2];
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            velCtx.putImageData(imageData, 0, 0);
+
+            // Arrows
+            const step = Math.max(1, Math.floor(nx / 20));
+            const cellPx = w / nx;
+            const arrowScale = (cellPx * step * 0.8) / maxMag;
+            velCtx.strokeStyle = 'rgba(40,40,40,0.75)';
+            velCtx.lineWidth = 1;
+            data.grid.forEach(pt => {
+                if (pt.i % step === 0 && pt.j % step === 0) {
+                    const px = (pt.x / 2.0) * w;
+                    const py2 = (1.0 - pt.y / 2.0) * h;
+                    const ddx = pt.u * arrowScale;
+                    const ddy = -pt.v * arrowScale;
+                    drawArrow(velCtx, px, py2, px + ddx, py2 + ddy);
+                }
+            });
+
+            velCtx.strokeStyle = '#000';
+            velCtx.lineWidth = 2;
+            velCtx.strokeRect(0, 0, w, h);
+            velCtx.fillStyle = 'red';
+            velCtx.font = '12px Arial';
+            velCtx.fillText('Moving Lid (u = 1)', 10, 20);
+        }
+
+        function drawPressureField() {
+            const data = currentData;
+            const nx = data.config.nx, ny = data.config.ny;
+            const w = presCanvas.width, h = presCanvas.height;
+            const minP = data.statistics.min_p;
+            const maxP = data.statistics.max_p;
+            const rangeP = maxP - minP || 1;
+
+            const grid = Array.from({length: ny}, () => new Array(nx));
+            data.grid.forEach(pt => { grid[pt.i][pt.j] = pt; });
+
+            const imageData = presCtx.createImageData(w, h);
+            for (let py = 0; py < h; py++) {
+                for (let px = 0; px < w; px++) {
+                    const gx = px / (w - 1) * (nx - 1);
+                    const gy = (1 - py / (h - 1)) * (ny - 1);
+                    const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
+                    const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
+                    const tx = gx - j0, ty = gy - i0;
+                    const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                    const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                    if (!p00 || !p10 || !p01 || !p11) continue;
+                    const pval = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
+                                 (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
+                    const t = (pval - minP) / rangeP;
+                    const color = pressureColor(t);
+                    const idx = (py * w + px) * 4;
+                    imageData.data[idx]     = color[0];
+                    imageData.data[idx + 1] = color[1];
+                    imageData.data[idx + 2] = color[2];
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            presCtx.putImageData(imageData, 0, 0);
+
+            presCtx.strokeStyle = '#000';
+            presCtx.lineWidth = 2;
+            presCtx.strokeRect(0, 0, w, h);
+            presCtx.fillStyle = 'rgba(0,0,0,0.6)';
+            presCtx.font = '11px Arial';
+            presCtx.textAlign = 'left';
+            presCtx.fillText('max: ' + maxP.toFixed(4), 4, 14);
+            presCtx.fillText('min: ' + minP.toFixed(4), 4, h - 4);
+        }
+
+        // 5-stop jet colormap (same as main.html)
+        function jetColor(t) {
+            t = Math.max(0, Math.min(1, t));
+            const stops = [[0,0,128],[0,0,255],[0,255,255],[0,255,0],[255,255,0],[255,0,0]];
+            const seg = t * (stops.length - 1);
+            const lo = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
+            const s = seg - lo;
+            return [
+                Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * s),
+                Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * s),
+                Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * s)
+            ];
+        }
+
+        // 4-stop pressure colormap (same as main.html)
+        function pressureColor(t) {
+            t = Math.max(0, Math.min(1, t));
+            const stops = [[0,0,255],[0,255,255],[255,128,0],[255,0,0]];
+            const seg = t * (stops.length - 1);
+            const lo = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
+            const s = seg - lo;
+            return [
+                Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * s),
+                Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * s),
+                Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * s)
+            ];
+        }
+
+        function drawArrow(ctx, x1, y1, x2, y2) {
+            const ddx = x2 - x1, ddy = y2 - y1;
+            const len = Math.sqrt(ddx * ddx + ddy * ddy);
+            if (len < 2) return;
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+            const arrowLen = Math.min(8, len * 0.3);
+            const angle = Math.atan2(ddy, ddx);
+            const a = Math.PI / 6;
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - arrowLen * Math.cos(angle - a), y2 - arrowLen * Math.sin(angle - a));
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - arrowLen * Math.cos(angle + a), y2 - arrowLen * Math.sin(angle + a));
+            ctx.stroke();
+        }
+
+        function clearAll() {
+            velCtx.clearRect(0, 0, velCanvas.width, velCanvas.height);
+            presCtx.clearRect(0, 0, presCanvas.width, presCanvas.height);
+            currentData = null;
+            ['maxU','maxV','maxP','minP','maxMag','centerU','centerV','centerP','centerMag',
+             'gridSize','timeSteps','density','viscosity','timeStep','reynolds','nit','elapsed','divNorm']
+                .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '-'; });
+            document.getElementById('velMin').textContent = '0.0000';
+            document.getElementById('velMax').textContent = '--';
+            document.getElementById('presMin').textContent = '--';
+            document.getElementById('presMax').textContent = '--';
+            updateStatus('Cleared – load new data to visualize', 'loading');
+        }
+
+        function downloadCsv() {
+            if (!currentData) { alert('No data loaded'); return; }
+            let csv = 'i,j,x,y,u,v,magnitude,pressure\n';
+            currentData.grid.forEach(pt => {
+                csv += pt.i+','+pt.j+','+pt.x+','+pt.y+','+pt.u+','+pt.v+','+pt.magnitude+','+pt.p+'\n';
+            });
+            const blob = new Blob([csv], {type:'text/csv'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'local_cavity_flow.csv';
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+        }
+
+        // ── Sample data (small 11x11 mock for demo) ──
+        function loadSampleData() {
+            const nx = 11, ny = 11;
+            const grid = [];
+            for (let i = 0; i < ny; i++) {
+                for (let j = 0; j < nx; j++) {
+                    const x = 2.0 * j / (nx - 1), y = 2.0 * i / (ny - 1);
+                    let u = 0, v = 0;
+                    if (i === ny - 1) { u = 1; }
+                    else if (i > 0 && j > 0 && j < nx - 1) {
+                        const r = Math.sqrt((x-1)*(x-1) + (y-1)*(y-1));
+                        u = -0.3 * Math.exp(-r) * (y - 1);
+                        v =  0.3 * Math.exp(-r) * (x - 1);
+                    }
+                    const mag = Math.sqrt(u*u + v*v);
+                    const p = Math.sin(Math.PI*x/2) * Math.cos(Math.PI*y/2) * 0.05;
+                    grid.push({i, j, x, y, u, v, p, magnitude: mag});
+                }
+            }
+            const sample = {
+                config: {nx, ny, nt: 50, nit: 50, dt: 0.001, dx: 0.2, dy: 0.2, rho: 1.0, nu: 0.1, re: 20},
+                statistics: {
+                    max_u: 1, max_v: 0.15, max_p: 0.05, min_p: -0.05,
+                    max_velocity_magnitude: 1, divergence_norm: 0.001,
+                    center_u: -0.01, center_v: 0.001, center_p: 0.003, elapsed_seconds: 0
+                },
+                grid
+            };
+            currentData = sample;
+            updateStatus('Sample data loaded (11x11 mock grid)', 'success');
+            updateDisplay();
+            visualize();
+        }
+    })();
+    </script>
+</body>
+</html>
