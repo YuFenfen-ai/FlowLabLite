@@ -494,6 +494,81 @@ fn cavity_flow_array(
   (u, v, p)
 }
 
+// ── JSON output for local run results ──
+
+/// Output simulation grid data as JSON to stdout.
+/// Format: { "config": {...}, "statistics": {...}, "grid": [...] }
+/// Used by local_viewer.html to visualize locally computed results.
+fn output_json(
+  u : Array[Array[Double]],
+  v : Array[Array[Double]],
+  p : Array[Array[Double]],
+  nt_actual : Int,
+  elapsed_secs : Double,
+) -> Unit {
+  // Statistics
+  let mut max_u = 0.0
+  let mut max_v = 0.0
+  let mut max_p = p[0][0]
+  let mut min_p = p[0][0]
+  let mut max_mag = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let au = u[i][j].abs()
+      let av = v[i][j].abs()
+      if au > max_u { max_u = au }
+      if av > max_v { max_v = av }
+      if p[i][j] > max_p { max_p = p[i][j] }
+      if p[i][j] < min_p { min_p = p[i][j] }
+      let mag = (u[i][j] * u[i][j] + v[i][j] * v[i][j]).sqrt()
+      if mag > max_mag { max_mag = mag }
+    }
+  }
+  // Divergence norm
+  let mut div_sum = 0.0
+  let div_count = (ny - 2) * (nx - 2)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let div = (u[i][j + 1] - u[i][j - 1]) / (2.0 * dx) +
+                (v[i + 1][j] - v[i - 1][j]) / (2.0 * dy)
+      div_sum = div_sum + div.abs()
+    }
+  }
+  let div_norm = if div_count > 0 { div_sum / div_count.to_double() } else { 0.0 }
+  let mid_i = ny / 2
+  let mid_j = nx / 2
+
+  println("===JSON_DATA_START===")
+  println("{")
+  println("  \"config\": {")
+  println("    \"nx\": \{nx}, \"ny\": \{ny}, \"nt\": \{nt_actual},")
+  println("    \"nit\": \{nit}, \"dt\": \{dt}, \"dx\": \{dx}, \"dy\": \{dy},")
+  println("    \"rho\": \{rho}, \"nu\": \{nu}, \"re\": \{1.0 * 2.0 / nu}")
+  println("  },")
+  println("  \"statistics\": {")
+  println("    \"max_u\": \{max_u}, \"max_v\": \{max_v},")
+  println("    \"max_p\": \{max_p}, \"min_p\": \{min_p},")
+  println("    \"max_velocity_magnitude\": \{max_mag},")
+  println("    \"divergence_norm\": \{div_norm},")
+  println("    \"center_u\": \{u[mid_i][mid_j]}, \"center_v\": \{v[mid_i][mid_j]},")
+  println("    \"center_p\": \{p[mid_i][mid_j]},")
+  println("    \"elapsed_seconds\": \{elapsed_secs}")
+  println("  },")
+  println("  \"grid\": [")
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let x_pos = 2.0 * j.to_double() / (nx - 1).to_double()
+      let y_pos = 2.0 * i.to_double() / (ny - 1).to_double()
+      let mag = (u[i][j] * u[i][j] + v[i][j] * v[i][j]).sqrt()
+      let comma = if i == ny - 1 && j == nx - 1 { "" } else { "," }
+      println("    {\"i\":\{i},\"j\":\{j},\"x\":\{x_pos},\"y\":\{y_pos},\"u\":\{u[i][j]},\"v\":\{v[i][j]},\"p\":\{p[i][j]},\"magnitude\":\{mag}}\{comma}")
+    }
+  }
+  println("  ]")
+  println("}")
+  println("===JSON_DATA_END===")
+}
+
 // Fibonacci helper – used only by the bench test in main_bench.mbt.
 fn fib(n : Int) -> Int {
   if n < 2 { return n }
@@ -655,10 +730,18 @@ fn main {
   // from a host binding to enable total runtime reporting.
   let program_end = now_seconds()
 
-  if have_timer && program_start > 0.0 && program_end > 0.0 {
-    let total_elapsed = program_end - program_start
-    println("Total program runtime (seconds): \{total_elapsed}")
-  } else if !have_timer {
+  let total_elapsed = if have_timer && program_start > 0.0 && program_end > 0.0 {
+    let e = program_end - program_start
+    println("Total program runtime (seconds): \{e}")
+    e
+  } else {
     println("Total program runtime: timing API unavailable in this environment")
+    0.0
   }
+
+  // Output JSON data block for local_viewer.html consumption
+  println("")
+  println("=== Generating JSON output for browser viewer ===")
+  output_json(u_final, v_final, p_final, nt_test, total_elapsed)
+  println("=== JSON output complete – load local_viewer.html to visualize ===")
 }
