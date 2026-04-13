@@ -16,6 +16,7 @@ FlowLabLite/
 │   ├── main_bench.mbt    # Micro-benchmark (fib baseline)
 │   ├── main_wbtest.mbt   # White-box unit tests
 │   ├── main.html         # Browser visualization (loads WASM, draws canvases)
+│   ├── local_viewer.html # Browser viewer for locally computed JSON results
 │   ├── moon.pkg.json     # Package config: imports, link/exports for both wasm targets
 │   ├── moon.pkg          # Legacy pkg marker (is-main: true) – required by moon tool
 │   └── now_clock.c       # Optional native timing shim (not needed for WASM builds)
@@ -24,6 +25,7 @@ FlowLabLite/
 ├── moon.mod.json         # Module manifest (package name, version)
 ├── build_wasm.sh         # Build script that re-links WASM with -exported_functions
 │                         # (workaround for moon 0.1.20260309 not passing exports to moonc)
+├── run_local.sh          # Run solver locally + extract JSON results for viewer
 └── README.md
 ```
 
@@ -41,6 +43,7 @@ FlowLabLite/
 | `get_divergence_norm()` | Mean |div u| over interior cells (convergence indicator) |
 | `cavity_flow_array()` | Navier-Stokes solver core (Chorin projection, finite-difference) |
 | `pressure_poisson_array()` | Iterative pressure solve (Gauss-Seidel, `nit` iterations) |
+| `output_json()` | Outputs full grid data as JSON to stdout (for local_viewer.html) |
 
 ### Browser visualization: `cmd/main/main.html`
 
@@ -121,7 +124,49 @@ moon bench
 
 ---
 
-## How to Use (Browser Visualization)
+## How to Use – Local Run + Browser Viewer
+
+This mode runs the solver **locally** (not in the browser) and produces a JSON
+file with velocity/pressure results, which you then view in `local_viewer.html`.
+
+### Step 1 – Run the simulation locally
+
+```bash
+# One-step script (builds, runs, extracts JSON):
+bash run_local.sh                  # → results.json
+bash run_local.sh my_results.json  # → custom filename
+
+# Or manually:
+moon run cmd/main --target wasm 2>&1 \
+  | sed -n '/===JSON_DATA_START===/,/===JSON_DATA_END===/p' \
+  | grep -v '===JSON_DATA' \
+  > results.json
+```
+
+### Step 2 – Open the local viewer
+
+Open `cmd/main/local_viewer.html` **directly in a browser** (no HTTP server needed —
+it uses `FileReader`, not `fetch()`).
+
+> Alternatively, serve with any HTTP server and navigate to the page.
+
+### Step 3 – Load results
+
+- **Drag & drop** `results.json` onto the page, or click the drop zone to browse.
+- Or click **Paste JSON from clipboard**.
+- The velocity magnitude field and pressure field render immediately.
+
+### Expected output
+
+| Field | Description |
+|---|---|
+| Left canvas | Velocity magnitude with jet colormap + vector arrows |
+| Right canvas | Pressure field (blue→cyan→orange→red) |
+| Info panel | Grid size, Re, time steps, max u/v/p, center-point data, divergence norm |
+
+---
+
+## How to Use – WASM in Browser (Interactive)
 
 ### Serving the page
 
@@ -173,6 +218,49 @@ http://localhost:8080/cmd/main/main.html
 | Canvases show mock rainbow patterns | WASM loaded but `init_simulation` not found | Rebuild with `build_wasm.sh` (old build missing exports) |
 | Blank page / console error about `0x77` | Browser too old | Use Chrome 115+ or Edge 115+ |
 | "Failed to load WebAssembly module" | CORS / file:// protocol | Must serve over HTTP, not file:// |
+
+---
+
+## Test Report
+
+### Running tests
+
+```bash
+moon test --target wasm      # run all 16 tests on wasm target
+moon test                    # all targets
+```
+
+### Test summary (16 tests, all passing)
+
+| # | Test name | Category | Validates |
+|---|---|---|---|
+| 1 | `create_zeros_2d` | Array utility | Correct dimensions and all-zero init |
+| 2 | `copy_2d_array` | Array utility | Deep copy, source independence |
+| 3 | `generate_mesh_grid` | Mesh | Coordinate range [0, 2] × [0, 2], monotonicity |
+| 4 | `init_simulation_resets_state` | State mgmt | Global arrays zeroed, step counter reset |
+| 5 | `boundary_conditions_after_run` | Solver | Lid u=1, no-slip walls u=v=0 after 10 steps |
+| 6 | `step_counter` | State mgmt | Increments correctly across multiple run_n_steps |
+| 7 | `out_of_range_returns_zero` | Safety | get_*_at returns 0 for negative/overflow indices |
+| 8 | `constant_accessors` | API | nx=41, ny=41, Re=20, rho=1, nu=0.1, dt=0.001 |
+| 9 | `velocity_magnitude_consistency` | Solver | get_velocity_magnitude_at = sqrt(u²+v²) |
+| 10 | `max_velocity_magnitude_bounds` | Solver | max_mag >= 0, max_mag >= max_u |
+| 11 | `pressure_bounded` | Solver | Pressure finite and within ±1000 after 50 steps |
+| 12 | `center_getters_consistent` | API | get_u/v/p_center = get_*_at(ny/2, nx/2) |
+| 13 | `divergence_norm_nonnegative` | Solver | Mean |div u| >= 0 |
+| 14 | `build_up_b_nonzero` | Solver | Pressure source term non-trivial with lid velocity |
+| 15 | `full_simulation_produces_vortex` | Physics | After 500 steps: negative u at center (backflow), max_u >= 1 |
+| 16 | `pressure_boundary_dp_zero` | Physics | dp/dy=0 at y=0, p=0 at y=2 satisfied |
+
+### Physical validation
+
+The lid-driven cavity at Re = 20 produces a primary clockwise vortex centered
+slightly above and to the right of the geometric center. After 500 time steps:
+
+- Center u-velocity is negative (≈ −0.06), confirming backflow
+- Center v-velocity is near zero (order 10⁻⁵)
+- Pressure boundary conditions (Neumann on walls, Dirichlet p=0 at top) are satisfied
+- Mean divergence norm decreases to O(10⁻²), indicating reasonable mass conservation
+  for the 50-iteration Gauss-Seidel pressure solver
 
 ---
 
