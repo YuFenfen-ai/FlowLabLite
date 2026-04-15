@@ -121,6 +121,22 @@
             color: #28a745;
         }
         .drop-zone input[type="file"] { display: none; }
+        .solver-selector {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            background: #e8f4fd;
+            border: 1px solid #bee3f8;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .solver-selector span { font-weight: bold; color: #2c5f8a; font-size: 14px; }
+        .solver-btn { padding: 6px 18px; border: 2px solid #007bff; border-radius: 4px;
+            cursor: pointer; font-size: 13px; background: white; color: #007bff; transition: all 0.2s; }
+        .solver-btn.active { background: #007bff; color: white; }
+        .solver-btn:hover:not(.active) { background: #e8f0fe; }
         .usage-hint {
             background: #f8f9fa;
             border-left: 4px solid #007bff;
@@ -149,9 +165,20 @@
 
         <div class="usage-hint">
             <strong>Usage:</strong><br>
-            1. Run locally: <code>moon run cmd/main --target wasm 2>&amp;1 | sed -n '/===JSON_DATA_START===/,/===JSON_DATA_END===/p' | grep -v '===JSON_DATA' &gt; results.json</code><br>
-            2. Or on Windows PowerShell: <code>moon run cmd/main --target wasm 2>&amp;1 | Out-File output.txt; then extract JSON block</code><br>
-            3. Load the <code>results.json</code> file below, or paste JSON directly.
+            1. Run <code>bash run_local.sh</code> → generates <code>results.json</code> with both Chorin &amp; SIMPLE results<br>
+            2. Or directly: <code>moon run cmd/main --target wasm 2&gt;&amp;1 | sed -n '/===JSON_DATA_START===/,/===JSON_DATA_END===/p' | grep -v '===JSON_DATA' &gt; results.json</code><br>
+            3. Drag <code>results.json</code> below → use the <strong>Chorin / SIMPLE</strong> tabs to switch solvers.
+        </div>
+
+        <!-- Solver selector – shown only when dual-solver JSON is detected -->
+        <div class="solver-selector" id="solverSelector" style="display:none;">
+            <span>Active solver:</span>
+            <button class="solver-btn active" id="btnChorin" onclick="setActiveSolver('chorin')">
+                Chorin&nbsp;(projection, transient)
+            </button>
+            <button class="solver-btn" id="btnSimple" onclick="setActiveSolver('simple')">
+                SIMPLE&nbsp;(pressure-correction, steady)
+            </button>
         </div>
 
         <div class="drop-zone" id="dropZone">
@@ -197,8 +224,12 @@
                     <div class="parameter-grid">
                         <span class="parameter-label">Grid Size:</span>
                         <span class="parameter-value" id="gridSize">-</span>
-                        <span class="parameter-label">Time Steps:</span>
+                        <span class="parameter-label">Solver:</span>
+                        <span class="parameter-value" id="solverMode">-</span>
+                        <span class="parameter-label">Chorin Steps:</span>
                         <span class="parameter-value" id="timeSteps">-</span>
+                        <span class="parameter-label">SIMPLE Iters:</span>
+                        <span class="parameter-value" id="simpleIters">-</span>
                         <span class="parameter-label">Reynolds Number:</span>
                         <span class="parameter-value" id="reynolds">-</span>
                         <span class="parameter-label">Density:</span>
@@ -209,15 +240,27 @@
                         <span class="parameter-value" id="timeStep">-</span>
                         <span class="parameter-label">Poisson iters:</span>
                         <span class="parameter-value" id="nit">-</span>
-                        <span class="parameter-label">Elapsed (s):</span>
-                        <span class="parameter-value" id="elapsed">-</span>
-                        <span class="parameter-label">|div(u)| avg:</span>
-                        <span class="parameter-value" id="divNorm">-</span>
+                    </div>
+                </div>
+
+                <div class="info-section" id="timingSection" style="display:none;">
+                    <h3>Timing</h3>
+                    <div class="parameter-grid">
+                        <span class="parameter-label">Chorin init:</span>
+                        <span class="parameter-value" id="tChorinInit">-</span>
+                        <span class="parameter-label">Chorin run:</span>
+                        <span class="parameter-value" id="tChorinRun">-</span>
+                        <span class="parameter-label">SIMPLE init:</span>
+                        <span class="parameter-value" id="tSimpleInit">-</span>
+                        <span class="parameter-label">SIMPLE run:</span>
+                        <span class="parameter-value" id="tSimpleRun">-</span>
+                        <span class="parameter-label">Total:</span>
+                        <span class="parameter-value" id="tTotal">-</span>
                     </div>
                 </div>
 
                 <div class="info-section">
-                    <h3>Field Statistics</h3>
+                    <h3>Field Statistics <span id="activeLabel" style="font-size:11px;color:#888;font-weight:normal;"></span></h3>
                     <div class="parameter-grid">
                         <span class="parameter-label">Max |u|:</span>
                         <span class="parameter-value" id="maxU">-</span>
@@ -229,6 +272,12 @@
                         <span class="parameter-value" id="minP">-</span>
                         <span class="parameter-label">Max |V|:</span>
                         <span class="parameter-value" id="maxMag">-</span>
+                        <span class="parameter-label">|div(u)| avg:</span>
+                        <span class="parameter-value" id="divNorm">-</span>
+                        <span class="parameter-label">Elapsed (s):</span>
+                        <span class="parameter-value" id="elapsed">-</span>
+                        <span class="parameter-label" id="residualLabel" style="display:none;">SIMPLE residual:</span>
+                        <span class="parameter-value" id="simpleResidual" style="display:none;">-</span>
                     </div>
                 </div>
 
@@ -273,6 +322,36 @@
         const velCtx = velCanvas.getContext('2d');
         const presCtx = presCanvas.getContext('2d');
         let currentData = null;
+        let activeSolver = 'chorin';  // 'chorin' | 'simple'
+
+        // Return the active grid array and statistics object
+        function activeGrid() {
+            if (activeSolver === 'simple' && currentData && currentData.simple_grid)
+                return currentData.simple_grid;
+            return currentData ? currentData.grid : [];
+        }
+        function activeStats() {
+            if (activeSolver === 'simple' && currentData && currentData.simple_statistics)
+                return currentData.simple_statistics;
+            return currentData ? currentData.statistics : {};
+        }
+
+        // Public function called by solver buttons
+        window.setActiveSolver = function(solver) {
+            activeSolver = solver;
+            document.getElementById('btnChorin').className =
+                'solver-btn' + (solver === 'chorin' ? ' active' : '');
+            document.getElementById('btnSimple').className =
+                'solver-btn' + (solver === 'simple' ? ' active' : '');
+            const label = document.getElementById('activeLabel');
+            if (label) label.textContent = solver === 'chorin'
+                ? '(Chorin – transient)' : '(SIMPLE – steady-state)';
+            // Show/hide SIMPLE-specific residual row
+            const show = solver === 'simple';
+            document.getElementById('residualLabel').style.display = show ? '' : 'none';
+            document.getElementById('simpleResidual').style.display = show ? '' : 'none';
+            if (currentData) { updateDisplay(); visualize(); }
+        };
 
         // ── File loading ──
         const dropZone = document.getElementById('dropZone');
@@ -311,7 +390,7 @@
 
         function loadJSON(text) {
             try {
-                // Try to extract JSON from output that contains markers
+                // Strip JSON_DATA markers if present
                 let jsonStr = text;
                 const startMarker = '===JSON_DATA_START===';
                 const endMarker = '===JSON_DATA_END===';
@@ -325,7 +404,30 @@
                     throw new Error('JSON must contain "config" and "grid" fields');
                 }
                 currentData = data;
-                updateStatus('Data loaded: ' + data.grid.length + ' grid points', 'success');
+                activeSolver = 'chorin';   // reset to Chorin on every load
+
+                // Dual-solver mode: show selector only when simple_grid is present
+                const hasDual = Array.isArray(data.simple_grid) && data.simple_grid.length > 0;
+                document.getElementById('solverSelector').style.display = hasDual ? 'flex' : 'none';
+                document.getElementById('btnChorin').className = 'solver-btn active';
+                document.getElementById('btnSimple').className = 'solver-btn';
+                const label = document.getElementById('activeLabel');
+                if (label) label.textContent = '(Chorin – transient)';
+
+                // Timing panel
+                const hasTiming = data.timing && data.timing.enabled;
+                document.getElementById('timingSection').style.display = hasTiming ? '' : 'none';
+                if (hasTiming) {
+                    const t = data.timing;
+                    document.getElementById('tChorinInit').textContent = t.chorin_init_ms.toFixed(2) + ' ms';
+                    document.getElementById('tChorinRun').textContent  = t.chorin_run_ms.toFixed(2) + ' ms';
+                    document.getElementById('tSimpleInit').textContent = t.simple_init_ms.toFixed(2) + ' ms';
+                    document.getElementById('tSimpleRun').textContent  = t.simple_run_ms.toFixed(2) + ' ms';
+                    document.getElementById('tTotal').textContent      = t.total_ms.toFixed(2) + ' ms';
+                }
+
+                const pts = data.grid.length;
+                updateStatus('Data loaded: ' + pts + ' grid points' + (hasDual ? ' (Chorin + SIMPLE)' : ''), 'success');
                 updateDisplay();
                 visualize();
             } catch (err) {
@@ -341,9 +443,11 @@
 
         function updateDisplay() {
             const c = currentData.config;
-            const s = currentData.statistics;
+            const s = activeStats();
             document.getElementById('gridSize').textContent = c.nx + ' x ' + c.ny;
-            document.getElementById('timeSteps').textContent = c.nt;
+            document.getElementById('solverMode').textContent = (c.solver || 'chorin').toUpperCase();
+            document.getElementById('timeSteps').textContent = c.nt || '-';
+            document.getElementById('simpleIters').textContent = c.simple_iters || '-';
             document.getElementById('reynolds').textContent = (c.re || (c.rho * 2.0 / c.nu)).toFixed(1);
             document.getElementById('density').textContent = c.rho.toFixed(2);
             document.getElementById('viscosity').textContent = c.nu.toFixed(3);
@@ -366,6 +470,10 @@
             document.getElementById('velMax').textContent = s.max_velocity_magnitude.toFixed(4);
             document.getElementById('presMin').textContent = s.min_p.toFixed(4);
             document.getElementById('presMax').textContent = s.max_p.toFixed(4);
+            // SIMPLE-specific residual
+            if (activeSolver === 'simple' && s.residual !== undefined) {
+                document.getElementById('simpleResidual').textContent = s.residual.toExponential(4);
+            }
         }
 
         // ── Visualization (same algorithms as main.html) ──
@@ -380,11 +488,12 @@
             const data = currentData;
             const nx = data.config.nx, ny = data.config.ny;
             const w = velCanvas.width, h = velCanvas.height;
-            const maxMag = data.statistics.max_velocity_magnitude || 1;
+            const stats = activeStats();
+            const maxMag = stats.max_velocity_magnitude || 1;
 
-            // Build grid
+            // Build grid from active solver
             const grid = Array.from({length: ny}, () => new Array(nx));
-            data.grid.forEach(pt => { grid[pt.i][pt.j] = pt; });
+            activeGrid().forEach(pt => { grid[pt.i][pt.j] = pt; });
 
             // Bilinear fill
             const imageData = velCtx.createImageData(w, h);
@@ -416,7 +525,7 @@
             const arrowScale = (cellPx * step * 0.8) / maxMag;
             velCtx.strokeStyle = 'rgba(40,40,40,0.75)';
             velCtx.lineWidth = 1;
-            data.grid.forEach(pt => {
+            activeGrid().forEach(pt => {
                 if (pt.i % step === 0 && pt.j % step === 0) {
                     const px = (pt.x / 2.0) * w;
                     const py2 = (1.0 - pt.y / 2.0) * h;
@@ -438,12 +547,13 @@
             const data = currentData;
             const nx = data.config.nx, ny = data.config.ny;
             const w = presCanvas.width, h = presCanvas.height;
-            const minP = data.statistics.min_p;
-            const maxP = data.statistics.max_p;
+            const stats = activeStats();
+            const minP = stats.min_p;
+            const maxP = stats.max_p;
             const rangeP = maxP - minP || 1;
 
             const grid = Array.from({length: ny}, () => new Array(nx));
-            data.grid.forEach(pt => { grid[pt.i][pt.j] = pt; });
+            activeGrid().forEach(pt => { grid[pt.i][pt.j] = pt; });
 
             const imageData = presCtx.createImageData(w, h);
             for (let py = 0; py < h; py++) {
@@ -475,8 +585,8 @@
             presCtx.fillStyle = 'rgba(0,0,0,0.6)';
             presCtx.font = '11px Arial';
             presCtx.textAlign = 'left';
-            presCtx.fillText('max: ' + maxP.toFixed(4), 4, 14);
-            presCtx.fillText('min: ' + minP.toFixed(4), 4, h - 4);
+            presCtx.fillText('max: ' + (maxP||0).toFixed(4), 4, 14);
+            presCtx.fillText('min: ' + (minP||0).toFixed(4), 4, h - 4);
         }
 
         // 5-stop jet colormap (same as main.html)
@@ -527,8 +637,12 @@
             velCtx.clearRect(0, 0, velCanvas.width, velCanvas.height);
             presCtx.clearRect(0, 0, presCanvas.width, presCanvas.height);
             currentData = null;
+            activeSolver = 'chorin';
+            document.getElementById('solverSelector').style.display = 'none';
+            document.getElementById('timingSection').style.display = 'none';
             ['maxU','maxV','maxP','minP','maxMag','centerU','centerV','centerP','centerMag',
-             'gridSize','timeSteps','density','viscosity','timeStep','reynolds','nit','elapsed','divNorm']
+             'gridSize','timeSteps','simpleIters','density','viscosity','timeStep','reynolds',
+             'nit','elapsed','divNorm','solverMode']
                 .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '-'; });
             document.getElementById('velMin').textContent = '0.0000';
             document.getElementById('velMax').textContent = '--';
@@ -539,9 +653,9 @@
 
         function downloadCsv() {
             if (!currentData) { alert('No data loaded'); return; }
-            let csv = 'i,j,x,y,u,v,magnitude,pressure\n';
-            currentData.grid.forEach(pt => {
-                csv += pt.i+','+pt.j+','+pt.x+','+pt.y+','+pt.u+','+pt.v+','+pt.magnitude+','+pt.p+'\n';
+            let csv = 'solver,i,j,x,y,u,v,magnitude,pressure\n';
+            activeGrid().forEach(pt => {
+                csv += activeSolver+','+pt.i+','+pt.j+','+pt.x+','+pt.y+','+pt.u+','+pt.v+','+pt.magnitude+','+pt.p+'\n';
             });
             const blob = new Blob([csv], {type:'text/csv'});
             const a = document.createElement('a');
