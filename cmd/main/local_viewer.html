@@ -511,6 +511,58 @@
   <!-- ── Right: control panel ── -->
   <div class="control-panel">
 
+    <!-- ── Playback / Animation ── -->
+    <div class="cp-section" id="secPlay">
+      <div class="cp-head" onclick="toggleSec('secPlay')">
+        ▶ Playback Animation <span class="cp-arrow">▾</span>
+      </div>
+      <div class="cp-body" style="display:flex;flex-direction:column;gap:10px">
+        <!-- Play controls -->
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn primary" id="btnPlay"  onclick="playStart()" style="flex:1">▶ Play</button>
+          <button class="btn" id="btnPause2" onclick="playPause()" style="flex:1">⏸ Pause</button>
+          <button class="btn" id="btnReset"  onclick="playReset()" style="flex:1">⟳ Reset</button>
+        </div>
+        <!-- Single step -->
+        <button class="btn" id="btnStep" onclick="playStep()" style="width:100%">
+          ⏭ Single Step (+1 frame)
+        </button>
+        <!-- Progress slider -->
+        <div style="font-size:11px;color:var(--c-muted)">
+          Progress:
+          <span id="playPct" style="color:var(--c-accent);font-family:monospace">0%</span>
+          &nbsp;
+          <span id="playFrameInfo" style="color:var(--c-muted);font-size:10px"></span>
+        </div>
+        <input type="range" id="playSlider" min="0" max="100" value="0"
+          style="width:100%;accent-color:var(--c-accent)"
+          oninput="playSeek(this.value)">
+        <!-- Speed control -->
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--c-muted)">
+          <span>Speed:</span>
+          <input type="range" id="playSpeed" min="1" max="20" value="8"
+            style="flex:1;accent-color:var(--c-accent)">
+          <span id="playSpeedLbl" style="font-family:monospace;color:var(--c-text);min-width:40px">8 fps</span>
+        </div>
+        <!-- Frames -->
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--c-muted)">
+          <span>Total frames:</span>
+          <input type="number" id="playFrames" value="60" min="10" max="500"
+            style="width:60px;padding:2px 5px;background:var(--c-surface2);border:1px solid var(--c-border);
+                   border-radius:4px;color:var(--c-text);font-size:11px;font-family:monospace;outline:none">
+        </div>
+        <p style="font-size:10px;color:#475569;line-height:1.5">
+          Animation interpolates the field from zero → final result,
+          simulating gradual convergence from initial conditions.
+        </p>
+        <p style="font-size:10px;color:#475569;line-height:1.5">
+          To regenerate with different step/iter counts, edit
+          <code style="background:var(--c-surface2);padding:1px 3px;border-radius:2px">main.mbt</code>
+          constants and re-run <code style="background:var(--c-surface2);padding:1px 3px;border-radius:2px">bash run_local.sh</code>.
+        </p>
+      </div>
+    </div>
+
     <!-- Parameters -->
     <div class="cp-section" id="secParams">
       <div class="cp-head" onclick="toggleSec('secParams')">
@@ -755,6 +807,14 @@ function loadJSON(text) {
       document.getElementById('tTot').textContent = t.total_ms.toFixed(2)       + ' ms';
     }
 
+    // Reset playback to fully-converged state
+    animT = 1.0; animFrame = 0; animPlaying = false;
+    DS.playT = 1.0;
+    if (animTimerId) { clearTimeout(animTimerId); animTimerId = null; }
+    document.getElementById('playSlider').value = 100;
+    document.getElementById('playPct').textContent = '100%';
+    document.getElementById('playFrameInfo').textContent = '';
+
     // Reset range overrides to auto
     DS.velAuto  = true; DS.presAuto = true;
     document.getElementById('velAutoChk').checked  = true;
@@ -922,6 +982,7 @@ function drawVelocityField() {
 
   // Bilinear fill via ImageData
   const img = velCtx.createImageData(w, h);
+  const playScale = DS.playT ?? 1;
   for (let py = 0; py < h; py++) {
     for (let px = 0; px < w; px++) {
       const gx = px / (w - 1) * (nx - 1);
@@ -932,8 +993,8 @@ function drawVelocityField() {
       const p00 = grid[i0][j0], p10 = grid[i1][j0];
       const p01 = grid[i0][j1], p11 = grid[i1][j1];
       if (!p00 || !p10 || !p01 || !p11) continue;
-      const mag = p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
-                  p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty;
+      const mag = (p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
+                   p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty) * playScale;
       const t   = Math.max(0, Math.min(1, (mag - minMag) / range));
       const c   = jetColor(t);
       const idx = (py * w + px) * 4;
@@ -991,6 +1052,7 @@ function drawPressureField() {
   activeGrid().forEach(pt => { grid[pt.i][pt.j] = pt; });
 
   const img = presCtx.createImageData(w, h);
+  const playScaleP = DS.playT ?? 1;
   for (let py = 0; py < h; py++) {
     for (let px = 0; px < w; px++) {
       const gx = px / (w - 1) * (nx - 1);
@@ -1001,9 +1063,9 @@ function drawPressureField() {
       const p00 = grid[i0][j0], p10 = grid[i1][j0];
       const p01 = grid[i0][j1], p11 = grid[i1][j1];
       if (!p00 || !p10 || !p01 || !p11) continue;
-      const pval = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
-                   (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
-      const t   = Math.max(0, Math.min(1, (pval - minP) / range));
+      const pval = ((p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
+                    (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty) * playScaleP;
+      const t   = Math.max(0, Math.min(1, (pval - minP * playScaleP) / range));
       const c   = pressureColor(t);
       const idx = (py * w + px) * 4;
       img.data[idx]   = c[0];
@@ -1102,6 +1164,84 @@ function drawContours(ctx, gridArr, nx, ny, w, h, nLevels, vMin, vMax, valFn, co
   }
   ctx.restore();
 }
+
+// ── Playback animation ────────────────────────────────────────────────────────
+// Animates by scaling the field values by playT (0→1), simulating convergence.
+let animT      = 1.0;    // 0..1; 1 = full field (default after load)
+let animFrame  = 0;
+let animTotal  = 60;
+let animPlaying = false;
+let animTimerId = null;
+
+DS.playT = 1.0;  // field scale factor used in draw functions
+
+function playStart() {
+  if (!currentData) { alert('Load data first'); return; }
+  if (animT >= 1) playReset();
+  animPlaying = true;
+  animSchedule();
+}
+function playPause() {
+  animPlaying = false;
+  if (animTimerId) { clearTimeout(animTimerId); animTimerId = null; }
+}
+function playReset() {
+  playPause();
+  animT = 0; animFrame = 0;
+  DS.playT = 0;
+  updatePlayUI();
+  if (currentData) redrawAll();
+}
+window.playStep = function () {
+  if (!currentData) return;
+  animTotal = parseInt(document.getElementById('playFrames').value) || 60;
+  animFrame = Math.min(animFrame + 1, animTotal);
+  animT = animFrame / animTotal;
+  DS.playT = animT;
+  updatePlayUI();
+  redrawAll();
+};
+window.playStart  = playStart;
+window.playPause  = playPause;
+window.playReset  = playReset;
+window.playSeek   = function (v) {
+  playPause();
+  animTotal = parseInt(document.getElementById('playFrames').value) || 60;
+  animFrame = Math.round(v / 100 * animTotal);
+  animT = animFrame / animTotal;
+  DS.playT = animT;
+  updatePlayUI();
+  if (currentData) redrawAll();
+};
+
+function animSchedule() {
+  if (!animPlaying) return;
+  animTotal = parseInt(document.getElementById('playFrames').value) || 60;
+  const fps  = parseInt(document.getElementById('playSpeed').value) || 8;
+  const delay = Math.round(1000 / fps);
+  animTimerId = setTimeout(() => {
+    if (!animPlaying) return;
+    animFrame = Math.min(animFrame + 1, animTotal);
+    animT = animFrame / animTotal;
+    DS.playT = animT;
+    updatePlayUI();
+    redrawAll();
+    if (animT < 1) animSchedule();
+    else { animPlaying = false; }
+  }, delay);
+}
+
+function updatePlayUI() {
+  const pct = Math.round(animT * 100);
+  document.getElementById('playPct').textContent = pct + '%';
+  document.getElementById('playSlider').value = pct;
+  document.getElementById('playFrameInfo').textContent =
+    `frame ${animFrame} / ${animTotal}`;
+}
+
+document.getElementById('playSpeed').addEventListener('input', function () {
+  document.getElementById('playSpeedLbl').textContent = this.value + ' fps';
+});
 
 // ── Colormaps ─────────────────────────────────────────────────────────────────
 function jetColor(t) {
