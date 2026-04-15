@@ -401,6 +401,13 @@
 
   <div class="tsep"></div>
 
+  <!-- u/v component plots toggle -->
+  <label class="tlabel" style="cursor:pointer;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="showUVChk" onchange="toggleUVGrid()"> u/v fields
+  </label>
+
+  <div class="tsep"></div>
+
   <!-- Export group -->
   <span class="tlabel">Export:</span>
   <select id="exportField"
@@ -472,6 +479,14 @@
             <button class="btn" id="velApply" onclick="applyVelRange()" disabled>Apply</button>
           </div>
         </div>
+        <!-- Arrow vector legend -->
+        <div style="margin-top:4px">
+          <div style="font-size:10px;color:var(--c-muted);margin-bottom:3px">
+            Vector arrow scale (length ∝ speed):
+          </div>
+          <canvas id="arrowLegendCanvas" height="44"
+            style="width:100%;display:block;border-radius:3px;background:transparent"></canvas>
+        </div>
       </div>
 
       <!-- Pressure canvas panel -->
@@ -504,6 +519,56 @@
       </div>
 
     </div><!-- /canvas-grid -->
+
+    <!-- u / v component panels (second row, hidden until data loaded) -->
+    <div class="canvas-grid" id="uvGrid" style="display:none">
+
+      <!-- u velocity -->
+      <div class="canvas-panel">
+        <div class="canvas-panel-title">
+          u Velocity (x-component)
+          <span id="uActiveLbl" style="font-size:10px;color:#475569"></span>
+        </div>
+        <div class="canvas-wrapper bg-dark" id="uWrapper">
+          <canvas id="uCanvas" width="500" height="500"></canvas>
+        </div>
+        <div class="colorbar-row">
+          <div class="colorbar-strip">
+            <span class="cb-label" id="uCbMin">—</span>
+            <div class="colorbar-bar"
+              style="background:linear-gradient(to right,#0055ff,#aaccff,#ffffff,#ffaaaa,#ff2200)"></div>
+            <span class="cb-label right" id="uCbMax">—</span>
+          </div>
+          <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
+            Blue = negative (leftward) &nbsp;|&nbsp; Red = positive (rightward)
+          </div>
+        </div>
+      </div>
+
+      <!-- v velocity -->
+      <div class="canvas-panel">
+        <div class="canvas-panel-title">
+          v Velocity (y-component)
+          <span id="vActiveLbl" style="font-size:10px;color:#475569"></span>
+        </div>
+        <div class="canvas-wrapper bg-dark" id="vWrapper">
+          <canvas id="vCanvas" width="500" height="500"></canvas>
+        </div>
+        <div class="colorbar-row">
+          <div class="colorbar-strip">
+            <span class="cb-label" id="vCbMin">—</span>
+            <div class="colorbar-bar"
+              style="background:linear-gradient(to right,#0055ff,#aaccff,#ffffff,#ffaaaa,#ff2200)"></div>
+            <span class="cb-label right" id="vCbMax">—</span>
+          </div>
+          <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
+            Blue = negative (downward) &nbsp;|&nbsp; Red = positive (upward)
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /uvGrid -->
+
   </div><!-- /viz-area -->
 
   <!-- ── Right: control panel ── -->
@@ -718,9 +783,10 @@ window.setActiveSolver = function (s) {
 // ── Background colour ─────────────────────────────────────────────────────────
 window.setBg = function (name) {
   DS.bgClass = 'bg-' + name;
-  document.getElementById('velWrapper').className  = 'canvas-wrapper ' + DS.bgClass;
-  document.getElementById('presWrapper').className = 'canvas-wrapper ' + DS.bgClass;
-  // keep select in sync (in case called programmatically)
+  ['velWrapper','presWrapper','uWrapper','vWrapper'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'canvas-wrapper ' + DS.bgClass;
+  });
   const sel = document.getElementById('bgSelect');
   if (sel) sel.value = name;
   if (currentData) redrawAll();
@@ -827,9 +893,15 @@ function loadJSON(text) {
     setVelRangeEnabled(false);
     setPresRangeEnabled(false);
 
-    // Show canvas grid, hide drop-zone
-    document.getElementById('dropZone').style.display  = 'none';
+    // Show canvas grid, hide drop-zone; sync u/v wrappers to current bg
+    document.getElementById('dropZone').style.display   = 'none';
     document.getElementById('canvasGrid').style.display = '';
+    // u/v grid shown only if checkbox is checked
+    const uvVisible = document.getElementById('showUVChk').checked;
+    document.getElementById('uvGrid').style.display = uvVisible ? '' : 'none';
+    // sync u/v wrapper bg
+    document.getElementById('uWrapper').className = 'canvas-wrapper ' + DS.bgClass;
+    document.getElementById('vWrapper').className = 'canvas-wrapper ' + DS.bgClass;
 
     updateStats();
     redrawAll();
@@ -943,6 +1015,11 @@ window.applyPresRange = function () {
 function redrawAll() {
   drawVelocityField();
   drawPressureField();
+  drawArrowLegend();
+  if (document.getElementById('showUVChk').checked) {
+    drawUField();
+    drawVField();
+  }
 }
 
 // canvas bg fill colour derived from wrapper CSS class
@@ -1411,6 +1488,137 @@ function triggerDownload(url, filename) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
+// ── u/v component field canvases ─────────────────────────────────────────────
+const uCanvas  = document.getElementById('uCanvas');
+const vCanvas  = document.getElementById('vCanvas');
+const uCtx     = uCanvas.getContext('2d');
+const vCtx     = vCanvas.getContext('2d');
+
+window.toggleUVGrid = function () {
+  const show = document.getElementById('showUVChk').checked;
+  if (currentData) {
+    document.getElementById('uvGrid').style.display = show ? '' : 'none';
+    if (show) { drawUField(); drawVField(); }
+  }
+};
+
+// Diverging colormap: blue (neg) → white (zero) → red (pos), t ∈ [0,1], mid=0.5
+function divergingColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  if (t < 0.5) {
+    const s = t * 2;                 // 0→1 as t: 0→0.5
+    return [Math.round(s*255), Math.round(s*255), 255];   // blue→white
+  } else {
+    const s = (1-t) * 2;            // 1→0 as t: 0.5→1
+    return [255, Math.round(s*255), Math.round(s*255)];   // white→red
+  }
+}
+
+function drawComponentField(ctx, canvas, getVal, labelIds) {
+  if (!currentData) return;
+  const cfg  = currentData.config;
+  const nx = cfg.nx, ny = cfg.ny;
+  const w = canvas.width, h = canvas.height;
+  const playScale = DS.playT ?? 1;
+
+  // Symmetric range around zero
+  let maxAbs = 0;
+  activeGrid().forEach(pt => { const v = Math.abs(getVal(pt)); if (v > maxAbs) maxAbs = v; });
+  maxAbs = (maxAbs * playScale) || 1e-9;
+
+  ctx.fillStyle = canvasBgFill();
+  ctx.fillRect(0, 0, w, h);
+
+  const grid = Array.from({length: ny}, () => new Array(nx));
+  activeGrid().forEach(pt => { grid[pt.i][pt.j] = pt; });
+
+  const img = ctx.createImageData(w, h);
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const gx = px/(w-1)*(nx-1), gy = (1-py/(h-1))*(ny-1);
+      const j0 = Math.floor(gx), j1 = Math.min(j0+1, nx-1);
+      const i0 = Math.floor(gy), i1 = Math.min(i0+1, ny-1);
+      const tx = gx-j0, ty = gy-i0;
+      const p00=grid[i0][j0], p10=grid[i1][j0], p01=grid[i0][j1], p11=grid[i1][j1];
+      if (!p00||!p10||!p01||!p11) continue;
+      const val = (getVal(p00)*(1-tx)*(1-ty) + getVal(p01)*tx*(1-ty) +
+                   getVal(p10)*(1-tx)*ty     + getVal(p11)*tx*ty) * playScale;
+      const t = (val/maxAbs + 1) / 2;  // [-maxAbs, maxAbs] → [0, 1]
+      const c = divergingColor(t);
+      const idx = (py*w+px)*4;
+      img.data[idx]=c[0]; img.data[idx+1]=c[1]; img.data[idx+2]=c[2]; img.data[idx+3]=255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.strokeStyle = arrowColor();
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w-2, h-2);
+
+  if (labelIds) {
+    document.getElementById(labelIds[0]).textContent = (-maxAbs).toFixed(4);
+    document.getElementById(labelIds[1]).textContent = maxAbs.toFixed(4);
+  }
+}
+
+function drawUField() { drawComponentField(uCtx, uCanvas, pt => pt.u, ['uCbMin','uCbMax']); }
+function drawVField() { drawComponentField(vCtx, vCanvas, pt => pt.v, ['vCbMin','vCbMax']); }
+
+// ── Arrow vector legend ────────────────────────────────────────────────────────
+function drawArrowLegend() {
+  const canvas = document.getElementById('arrowLegendCanvas');
+  if (!canvas || !currentData) return;
+  const dpr  = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const cw   = Math.max(rect.width || 400, 200);
+  const ch   = 44;
+  canvas.width  = Math.round(cw * dpr);
+  canvas.height = Math.round(ch * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const stats  = activeStats();
+  const maxMag = DS.velAuto ? (stats.max_velocity_magnitude || 1) : DS.velMax;
+  const effMax = maxMag * (DS.playT ?? 1);
+
+  ctx.fillStyle = canvasBgFill();
+  ctx.fillRect(0, 0, cw, ch);
+
+  const fracs  = [0.25, 0.5, 0.75, 1.0];
+  const padL = 8;
+  const usable = cw - padL - 8;
+  const slot   = usable / fracs.length;
+  const maxLen = slot * 0.68;
+  const midY   = 15;
+
+  ctx.strokeStyle = arrowColor();
+  ctx.fillStyle   = arrowColor();
+  ctx.lineWidth   = 1.4;
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = '10px monospace';
+
+  fracs.forEach((frac, idx) => {
+    const x0 = padL + idx * slot + slot * 0.06;
+    const len = frac * maxLen;
+    const x1  = x0 + len;
+    ctx.beginPath(); ctx.moveTo(x0, midY); ctx.lineTo(x1, midY); ctx.stroke();
+    const al = Math.min(6, len * 0.28), ang = Math.PI/7;
+    ctx.beginPath();
+    ctx.moveTo(x1, midY);
+    ctx.lineTo(x1-al*Math.cos(ang), midY-al*Math.sin(ang));
+    ctx.moveTo(x1, midY);
+    ctx.lineTo(x1-al*Math.cos(ang), midY+al*Math.sin(ang));
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(x0, midY, 2, 0, Math.PI*2); ctx.fill();
+    ctx.fillText((effMax * frac).toFixed(3), (x0+x1)/2, midY+7);
+  });
+
+  ctx.textAlign = 'left';
+  ctx.font = '9px monospace';
+  ctx.fillStyle = arrowColor();
+  ctx.fillText('speed (m/s)', padL, ch-12);
+}
+
 // ── Fullscreen ────────────────────────────────────────────────────────────────
 document.getElementById('btnFs').addEventListener('click', () => {
   const el = document.getElementById('vizArea');
@@ -1425,12 +1633,18 @@ document.getElementById('btnFs').addEventListener('click', () => {
 function clearAll() {
   velCtx.clearRect(0,  0, velCanvas.width,  velCanvas.height);
   presCtx.clearRect(0, 0, presCanvas.width, presCanvas.height);
+  uCtx.clearRect(0, 0, uCanvas.width, uCanvas.height);
+  vCtx.clearRect(0, 0, vCanvas.width, vCanvas.height);
+  const alc = document.getElementById('arrowLegendCanvas');
+  if (alc) alc.getContext('2d').clearRect(0, 0, alc.width, alc.height);
   currentData = null; activeSolver = 'chorin';
-  document.getElementById('dropZone').style.display   = '';
-  document.getElementById('canvasGrid').style.display = 'none';
-  document.getElementById('solverBar').style.display  = 'none';
-  document.getElementById('solverSep').style.display  = 'none';
-  document.getElementById('secTiming').style.display  = 'none';
+  document.getElementById('dropZone').style.display        = '';
+  document.getElementById('canvasGrid').style.display      = 'none';
+  document.getElementById('uvGrid').style.display          = 'none';
+  document.getElementById('solverBar').style.display       = 'none';
+  document.getElementById('solverSep').style.display       = 'none';
+  document.getElementById('secTiming').style.display       = 'none';
+  document.getElementById('headerSolverSwitch').style.display = 'none';
   document.getElementById('headerDot').className = 'dot idle';
   document.getElementById('headerMsg').textContent = 'No data';
   [
