@@ -2,27 +2,45 @@
 
 ## 1. `main()` Function
 
+> **更新说明（2026-04-15）：** main() 已重构，使用 `@bench` 实现真实计时，  
+> 同时运行 Chorin 和 SIMPLE 两个求解器，输出包含双结果的统一 JSON。  
+> 已移除：`now_seconds()`（存根）、`generate_mesh_grid()`（仅本地使用）、  
+> `write_velocity_to_file()`（无效占位实现）。
+
 ```mermaid
 flowchart TD
-    A([main 入口]) --> B[记录程序启动时间\nnow_seconds]
-    B --> C[打印求解器信息\n网格 41×41 / 500步 / Re=20]
-    C --> D[create_zeros_2d\n初始化 u, v, p 数组]
-    D --> E[generate_mesh_grid\n生成坐标网格 x, y]
-    E --> F[记录仿真开始时间\nsim_start]
-    F --> G[cavity_flow_array\nnt_test=100 步]
-    G --> H[记录仿真结束时间\nsim_end]
-    H --> I{have_timer?}
-    I -- 是 --> J[打印仿真耗时]
-    I -- 否 --> K[打印 timing unavailable]
-    J --> L[打印中心点结果\nu / v / p / 速度幅值]
-    K --> L
-    L --> M[打印顶盖速度剖面\nj=0,5,10,...,40]
-    M --> N[统计全场最大值\nmax_u / max_v / max_p / min_p]
-    N --> O[打印采样点速度幅值\n4个样本点]
-    O --> P[write_velocity_to_file\nvelocity_field.txt]
-    P --> Q[output_json\n生成 JSON 供 local_viewer.html]
-    Q --> R([结束])
+    A([main 入口]) --> B[@bench.monotonic_clock_start\n记录程序启动时间戳]
+    B --> C[打印求解器配置\n网格 41×41 / Re=20\nChorin local_nt 步 / SIMPLE local_simple_n 次]
+
+    C --> D{run_chorin = true?}
+    D -- 是 --> E["timed('Chorin init')\n→ init_simulation()"]
+    D -- 否 --> G
+    E --> F["timed('Chorin N steps')\n→ run_n_steps(local_nt)"]
+    F --> G{run_simple = true?}
+
+    G -- 是 --> H["timed('SIMPLE init')\n→ init_simple()"]
+    G -- 否 --> J
+    H --> I["timed('SIMPLE N iters')\n→ run_simple_n_iter(local_simple_n)"]
+    I --> J[@bench.monotonic_clock_end\n计算 total_ms]
+
+    J --> K{timing_enabled?}
+    K -- 是 --> L[打印 Timing Summary\n各阶段 ms + 总计]
+    K -- 否 --> M
+    L --> M[output_json\ng_u/v/p + g_u_s/v_s/p_s\n+ timing → JSON_DATA 标记块]
+    M --> N([结束])
 ```
+
+### 本地运行配置常量（`main.mbt` 顶部）
+
+| 常量 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `timing_enabled` | Bool | true | 计时总开关 |
+| `time_chorin_phase` | Bool | true | Chorin 分项计时 |
+| `time_simple_phase` | Bool | true | SIMPLE 分项计时 |
+| `run_chorin` | Bool | true | 是否运行 Chorin |
+| `local_nt` | Int | nt=500 | Chorin 步数 |
+| `run_simple` | Bool | true | 是否运行 SIMPLE |
+| `local_simple_n` | Int | 100 | SIMPLE 迭代次数 |
 
 ---
 

@@ -25,8 +25,7 @@ FlowLabLite/
 │   ├── main.html         # Browser visualization (loads WASM, draws canvases)
 │   ├── local_viewer.html # Browser viewer for locally computed JSON results
 │   ├── moon.pkg.json     # Package config: imports, link/exports for both wasm targets
-│   ├── moon.pkg          # Legacy pkg marker (is-main: true) – required by moon tool
-│   └── now_clock.c       # Optional native timing shim (not needed for WASM builds)
+│   └── moon.pkg          # Legacy pkg marker (is-main: true) – required by moon tool
 ├── lib/
 │   └── moon.pkg.json     # Library package placeholder
 ├── moon.mod.json         # Module manifest (package name, version)
@@ -49,7 +48,8 @@ FlowLabLite/
 | `get_divergence_norm()` | Mean \|div u\| over interior cells (convergence indicator) |
 | `cavity_flow_array()` | Navier-Stokes solver core (Chorin projection, finite-difference) |
 | `pressure_poisson_array()` | Iterative pressure solve (Gauss-Seidel, `nit` iterations) |
-| `output_json()` | Outputs full grid data as JSON to stdout (for local_viewer.html) |
+| `output_json(…)` | Outputs dual-solver grid data as JSON to stdout; config + timing + Chorin (`statistics`/`grid`) + SIMPLE (`simple_statistics`/`simple_grid`) |
+| `timed(enabled, label, f)` | Timing helper: runs `f()`, prints `[Timing]` line when enabled, returns elapsed ms |
 | **SIMPLE constants** | `simple_alpha_p = 0.3`, `simple_alpha_u = 0.7` (under-relaxation) |
 | **SIMPLE state** (`g_u_s`, `g_v_s`, `g_p_s`) | Independent 41×41 arrays for SIMPLE solver |
 | `init_simple()` | Zeroes SIMPLE state; must be called before `run_simple_n_iter` |
@@ -205,24 +205,48 @@ moon bench
 
 ## How to Use – Local Run + Browser Viewer
 
-Run the solver locally and view results in `local_viewer.html`.
+Run both solvers locally and view results in `local_viewer.html`.
 
-### Step 1 – Run the simulation locally
+### Step 1 – Configure the run (optional)
+
+Edit the constants at the top of `cmd/main/main.mbt` before running:
+
+| Constant | Default | Description |
+|---|---|---|
+| `timing_enabled` | `true` | Master switch for timing output |
+| `time_chorin_phase` | `true` | Per-phase timing for Chorin |
+| `time_simple_phase` | `true` | Per-phase timing for SIMPLE |
+| `run_chorin` | `true` | Whether to run the Chorin solver |
+| `local_nt` | `nt` (500) | Number of Chorin time steps |
+| `run_simple` | `true` | Whether to run the SIMPLE solver |
+| `local_simple_n` | `100` | Number of SIMPLE iterations |
+
+### Step 2 – Run the simulation locally
 
 ```bash
-bash run_local.sh                  # → results.json
+bash run_local.sh                  # → results.json (both solvers, 1681 + 1681 grid points)
 bash run_local.sh my_results.json  # → custom filename
 ```
 
-### Step 2 – Open the local viewer
+The script runs `moon run cmd/main --target wasm`, extracts the JSON block
+between `===JSON_DATA_START===` / `===JSON_DATA_END===` markers, and writes it
+to the output file. Timing lines (`[Timing] …`) are printed to the terminal but
+not included in the JSON.
+
+### Step 3 – Open the local viewer
 
 Open `cmd/main/local_viewer.html` directly in a browser (no HTTP server needed —
 it uses `FileReader`, not `fetch()`).
 
-### Step 3 – Load results
+### Step 4 – Load results
 
 - **Drag & drop** `results.json` onto the page, or click the drop zone to browse.
 - Or click **Paste JSON from clipboard**.
+
+When the JSON contains both `grid` and `simple_grid` keys, the viewer shows
+**Chorin / SIMPLE** tab buttons. Click a tab to switch the displayed solver's
+velocity and pressure fields. The Timing panel shows per-phase milliseconds for
+both solvers.
 
 ---
 
