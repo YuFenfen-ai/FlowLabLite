@@ -176,28 +176,23 @@
     }
     .canvas-panel-title span { font-size: 11px; font-weight: 400; color: #475569; }
 
-    /* canvas fills its panel width, square via padding trick */
+    /* canvas fills its panel width, square via aspect-ratio + visible bg padding */
     .canvas-wrapper {
-      position: relative;
       width: 100%;
-      background: #1a1a2e;
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .canvas-wrapper::before {
-      content: '';
-      display: block;
-      padding-top: 100%;  /* 1:1 aspect ratio */
+      padding: 5px;          /* bg colour shows as frame around the canvas */
+      border-radius: 8px;
+      background: #1a1a2e;   /* default dark */
     }
     .canvas-wrapper canvas {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 4px;
     }
-    /* Background variants */
+    /* Background variants – colour visible in the 5px padding frame */
     .canvas-wrapper.bg-dark   { background: #1a1a2e; }
     .canvas-wrapper.bg-black  { background: #000000; }
-    .canvas-wrapper.bg-white  { background: #ffffff; }
+    .canvas-wrapper.bg-white  { background: #e8e8e8; }
     .canvas-wrapper.bg-gray   { background: #6b7280; }
     .canvas-wrapper.bg-navy   { background: #0a1128; }
 
@@ -330,6 +325,13 @@
     </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
+    <!-- Solver quick-switch (visible only for dual-solver JSON) -->
+    <div id="headerSolverSwitch" style="display:none;gap:4px;align-items:center;display:none">
+      <button class="btn active" id="hBtnChorin" onclick="setActiveSolver('chorin')"
+        style="padding:4px 10px;font-size:12px" title="Switch to Chorin solver view">Chorin</button>
+      <button class="btn" id="hBtnSimple" onclick="setActiveSolver('simple')"
+        style="padding:4px 10px;font-size:12px" title="Switch to SIMPLE solver view">SIMPLE</button>
+    </div>
     <div class="status-pill" id="headerPill">
       <div class="dot idle" id="headerDot"></div>
       <span id="headerMsg">No data</span>
@@ -359,17 +361,17 @@
 
   <div class="tsep" id="solverSep" style="display:none"></div>
 
-  <!-- Background color -->
-  <span class="tlabel">Canvas BG:</span>
-  <div class="btn-group" id="bgGroup">
-    <button class="btn active" data-bg="dark"  onclick="setBg('dark')">Dark</button>
-    <button class="btn"        data-bg="black" onclick="setBg('black')">Black</button>
-    <button class="btn"        data-bg="navy"  onclick="setBg('navy')">Navy</button>
-    <button class="btn"        data-bg="gray"  onclick="setBg('gray')">Gray</button>
-    <button class="btn"        data-bg="white" onclick="setBg('white')">White</button>
-  </div>
-
-  <div class="tsep"></div>
+  <!-- Background color (dropdown) -->
+  <span class="tlabel">BG:</span>
+  <select id="bgSelect" onchange="setBg(this.value)"
+    style="padding:4px 6px;background:var(--c-surface2);border:1px solid var(--c-border);
+           border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
+    <option value="dark">Dark</option>
+    <option value="black">Black</option>
+    <option value="navy">Navy</option>
+    <option value="gray">Gray</option>
+    <option value="white">White</option>
+  </select>
 
   <div class="tsep"></div>
 
@@ -399,12 +401,7 @@
 
   <div class="tsep"></div>
 
-  <!-- Fullscreen -->
-  <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Fullscreen</button>
-
-  <div class="tsep"></div>
-
-  <!-- Export -->
+  <!-- Export group -->
   <span class="tlabel">Export:</span>
   <select id="exportField"
     style="padding:4px 6px;background:var(--c-surface2);border:1px solid var(--c-border);
@@ -424,10 +421,11 @@
   <input type="number" id="exportPx" value="1024" min="256" max="4096" step="256"
     style="width:56px;padding:3px 5px;background:var(--c-surface2);border:1px solid var(--c-border);
            border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
-  <button class="btn primary" id="btnExport">⬇ Export</button>
-
-  <!-- CSV download -->
+  <button class="btn primary" id="btnExport">⬇ Img</button>
   <button class="btn" id="btnCsv">⬇ CSV</button>
+
+  <div class="tsep"></div>
+  <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Full</button>
 </div>
 
 <!-- ═══ MAIN ══════════════════════════════════════════════════════════════════ -->
@@ -702,12 +700,18 @@ function activeStats() {
 // ── Solver toggle ─────────────────────────────────────────────────────────────
 window.setActiveSolver = function (s) {
   activeSolver = s;
+  // toolbar buttons
   document.getElementById('btnChorin').className = 'btn' + (s === 'chorin' ? ' active' : '');
   document.getElementById('btnSimple').className = 'btn' + (s === 'simple' ? ' active' : '');
+  // header quick-switch buttons
+  document.getElementById('hBtnChorin').className = 'btn' + (s === 'chorin' ? ' active' : '');
+  document.getElementById('hBtnSimple').className = 'btn' + (s === 'simple' ? ' active' : '');
   const isSimple = s === 'simple';
   document.getElementById('sResRow').style.display = isSimple ? '' : 'none';
-  document.getElementById('velActiveLbl').textContent  = isSimple ? '(SIMPLE – steady)' : '(Chorin – transient)';
-  document.getElementById('presActiveLbl').textContent = isSimple ? '(SIMPLE – steady)' : '(Chorin – transient)';
+  const lbl = isSimple ? '(SIMPLE – steady)' : '(Chorin – transient)';
+  document.getElementById('velActiveLbl').textContent  = lbl;
+  document.getElementById('presActiveLbl').textContent = lbl;
+  document.getElementById('headerMsg').textContent = s === 'chorin' ? 'Chorin active' : 'SIMPLE active';
   if (currentData) { updateStats(); redrawAll(); }
 };
 
@@ -716,9 +720,9 @@ window.setBg = function (name) {
   DS.bgClass = 'bg-' + name;
   document.getElementById('velWrapper').className  = 'canvas-wrapper ' + DS.bgClass;
   document.getElementById('presWrapper').className = 'canvas-wrapper ' + DS.bgClass;
-  // update active btn
-  document.querySelectorAll('#bgGroup .btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.bg === name));
+  // keep select in sync (in case called programmatically)
+  const sel = document.getElementById('bgSelect');
+  if (sel) sel.value = name;
   if (currentData) redrawAll();
 };
 
@@ -785,12 +789,13 @@ function loadJSON(text) {
 
     // Dual-solver detection
     const hasDual = Array.isArray(data.simple_grid) && data.simple_grid.length > 0;
-    const solverBar = document.getElementById('solverBar');
-    const solverSep = document.getElementById('solverSep');
-    solverBar.style.display = hasDual ? 'flex' : 'none';
-    solverSep.style.display = hasDual ? '' : 'none';
-    document.getElementById('btnChorin').className = 'btn active';
-    document.getElementById('btnSimple').className = 'btn';
+    document.getElementById('solverBar').style.display  = hasDual ? 'flex' : 'none';
+    document.getElementById('solverSep').style.display  = hasDual ? ''     : 'none';
+    document.getElementById('headerSolverSwitch').style.display = hasDual ? 'flex' : 'none';
+    document.getElementById('btnChorin').className  = 'btn active';
+    document.getElementById('btnSimple').className  = 'btn';
+    document.getElementById('hBtnChorin').className = 'btn active';
+    document.getElementById('hBtnSimple').className = 'btn';
     document.getElementById('velActiveLbl').textContent  = '(Chorin – transient)';
     document.getElementById('presActiveLbl').textContent = '(Chorin – transient)';
     document.getElementById('sResRow').style.display = 'none';
@@ -1006,7 +1011,7 @@ function drawVelocityField() {
   }
   velCtx.putImageData(img, 0, 0);
 
-  // Velocity arrows
+  // Velocity arrows — scaled by playScale so arrows shrink during animation
   const step = Math.max(1, Math.floor(nx / 20));
   const arrowScale = (w / nx * step * 0.85) / (maxMag || 1);
   velCtx.strokeStyle = arrowColor();
@@ -1015,14 +1020,17 @@ function drawVelocityField() {
     if (pt.i % step !== 0 || pt.j % step !== 0) return;
     const px = (pt.x / 2) * w;
     const py = (1 - pt.y / 2) * h;
-    drawArrow(velCtx, px, py, px + pt.u * arrowScale, py - pt.v * arrowScale);
+    drawArrow(velCtx, px, py,
+      px + pt.u * arrowScale * playScale,
+      py - pt.v * arrowScale * playScale);
   });
 
-  // Isolines overlay
+  // Isolines overlay — use scaled min/max so contours track the animation
   if (DS.velContours) {
     const col = DS.contourColor === 'auto' ? arrowColor() : DS.contourColor;
     drawContours(velCtx, activeGrid(), nx, ny, w, h,
-      DS.contourN, minMag, maxMag, pt => pt.magnitude, col);
+      DS.contourN, minMag * playScale, maxMag * playScale,
+      pt => pt.magnitude * playScale, col);
   }
 
   // Border & label
@@ -1076,11 +1084,12 @@ function drawPressureField() {
   }
   presCtx.putImageData(img, 0, 0);
 
-  // Isolines overlay
+  // Isolines overlay — scaled so contours track the animation
   if (DS.presContours) {
     const col = DS.contourColor === 'auto' ? arrowColor() : DS.contourColor;
     drawContours(presCtx, activeGrid(), nx, ny, w, h,
-      DS.contourN, minP, maxP, pt => pt.p, col);
+      DS.contourN, minP * playScaleP, maxP * playScaleP,
+      pt => (pt.p || 0) * playScaleP, col);
   }
 
   presCtx.strokeStyle = arrowColor();
