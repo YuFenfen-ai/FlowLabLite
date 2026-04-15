@@ -714,11 +714,10 @@ fn simple_one_iter(
     }
   }
 
-  // BCs for u*, v*
+  // BCs for u*, v* – walls first, lid last
   for j = 0; j < nx; j = j + 1 {
-    u_star[0][j]      = 0.0
-    u_star[ny - 1][j] = 1.0   // lid
-    v_star[0][j]      = 0.0
+    u_star[0][j] = 0.0
+    v_star[0][j] = 0.0
     v_star[ny - 1][j] = 0.0
   }
   for i = 0; i < ny; i = i + 1 {
@@ -727,8 +726,9 @@ fn simple_one_iter(
     v_star[i][0]      = 0.0
     v_star[i][nx - 1] = 0.0
   }
-  u_star[ny - 1][0]      = 1.0
-  u_star[ny - 1][nx - 1] = 1.0
+  for j = 0; j < nx; j = j + 1 {
+    u_star[ny - 1][j] = 1.0
+  }
 
   // ── (b) Build pressure-correction source b = −(∂u*/∂x + ∂v*/∂y) ──
   build_up_b_array(b, rho, dt, u_star, v_star, dx, dy) |> ignore
@@ -755,11 +755,10 @@ fn simple_one_iter(
     p[ny - 1][j] = 0.0
   }
 
-  // Velocity BCs
+  // Velocity BCs – apply walls first, lid last so corners take lid value
   for j = 0; j < nx; j = j + 1 {
-    u[0][j]      = 0.0
-    u[ny - 1][j] = 1.0
-    v[0][j]      = 0.0
+    u[0][j] = 0.0
+    v[0][j] = 0.0
     v[ny - 1][j] = 0.0
   }
   for i = 0; i < ny; i = i + 1 {
@@ -767,6 +766,10 @@ fn simple_one_iter(
     u[i][nx - 1] = 0.0
     v[i][0]      = 0.0
     v[i][nx - 1] = 0.0
+  }
+  // Lid BC applied last so it overrides corner values
+  for j = 0; j < nx; j = j + 1 {
+    u[ny - 1][j] = 1.0
   }
 }
 

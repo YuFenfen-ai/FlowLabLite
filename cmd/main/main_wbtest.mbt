@@ -234,3 +234,150 @@ test "pressure_boundary_dp_zero" {
     assert_true(approx_eq(get_p_at(ny - 1, j), 0.0, 1.0e-10))
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SIMPLE algorithm tests (Tests 17–26)
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── Test 17: init_simple resets all SIMPLE fields and counters ──
+test "simple_init_resets_state" {
+  // Dirty the SIMPLE global state first
+  init_simple()
+  run_simple_n_iter(5)
+  // Now reset and verify
+  init_simple()
+  assert_eq(get_simple_step_count(), 0)
+  assert_true(approx_eq(get_simple_residual(), 0.0, 1.0e-15))
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      assert_eq(get_u_simple_at(i, j), 0.0)
+      assert_eq(get_v_simple_at(i, j), 0.0)
+      assert_eq(get_p_simple_at(i, j), 0.0)
+    }
+  }
+}
+
+// ── Test 18: SIMPLE step counter increments correctly ──
+test "simple_step_counter" {
+  init_simple()
+  assert_eq(get_simple_step_count(), 0)
+  run_simple_n_iter(3)
+  assert_eq(get_simple_step_count(), 3)
+  run_simple_n_iter(7)
+  assert_eq(get_simple_step_count(), 10)
+}
+
+// ── Test 19: SIMPLE boundary conditions after run ──
+test "simple_boundary_conditions" {
+  init_simple()
+  run_simple_n_iter(20)
+  // Top lid: u = 1
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_u_simple_at(ny - 1, j), 1.0, 1.0e-10))
+  }
+  // Bottom wall: u = 0, v = 0
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_u_simple_at(0, j), 0.0, 1.0e-10))
+    assert_true(approx_eq(get_v_simple_at(0, j), 0.0, 1.0e-10))
+  }
+  // Left wall (interior rows): u = 0, v = 0
+  for i = 0; i < ny - 1; i = i + 1 {
+    assert_true(approx_eq(get_u_simple_at(i, 0), 0.0, 1.0e-10))
+    assert_true(approx_eq(get_v_simple_at(i, 0), 0.0, 1.0e-10))
+  }
+  // Right wall (interior rows): u = 0, v = 0
+  for i = 0; i < ny - 1; i = i + 1 {
+    assert_true(approx_eq(get_u_simple_at(i, nx - 1), 0.0, 1.0e-10))
+    assert_true(approx_eq(get_v_simple_at(i, nx - 1), 0.0, 1.0e-10))
+  }
+  // Top wall: v = 0
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_v_simple_at(ny - 1, j), 0.0, 1.0e-10))
+  }
+}
+
+// ── Test 20: get_*_simple_at returns 0 for out-of-range indices ──
+test "simple_out_of_range_returns_zero" {
+  assert_eq(get_u_simple_at(-1, 0), 0.0)
+  assert_eq(get_u_simple_at(ny, 0), 0.0)
+  assert_eq(get_v_simple_at(0, -1), 0.0)
+  assert_eq(get_v_simple_at(0, nx), 0.0)
+  assert_eq(get_p_simple_at(999, 999), 0.0)
+}
+
+// ── Test 21: SIMPLE residual is non-negative ──
+test "simple_residual_nonnegative" {
+  init_simple()
+  run_simple_n_iter(10)
+  assert_true(get_simple_residual() >= 0.0)
+  assert_true(get_simple_divergence_norm() >= 0.0)
+}
+
+// ── Test 22: SIMPLE produces non-zero interior velocities after iterations ──
+test "simple_produces_flow" {
+  init_simple()
+  run_simple_n_iter(50)
+  // After 50 iterations with a lid, interior should be non-trivial
+  let mut nonzero_u = false
+  let mut nonzero_v = false
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      if get_u_simple_at(i, j).abs() > 1.0e-10 { nonzero_u = true }
+      if get_v_simple_at(i, j).abs() > 1.0e-10 { nonzero_v = true }
+    }
+  }
+  assert_true(nonzero_u)
+  assert_true(nonzero_v)
+}
+
+// ── Test 23: SIMPLE max_u is non-negative and does not exceed lid + margin ──
+test "simple_max_u_bounds" {
+  init_simple()
+  run_simple_n_iter(50)
+  let mu = get_max_u_simple()
+  assert_true(mu >= 0.0)
+  // SIMPLE under-relaxation keeps velocities bounded; lid is u=1
+  assert_true(mu <= 2.0)
+}
+
+// ── Test 24: SIMPLE pressure boundary conditions satisfied ──
+test "simple_pressure_boundary" {
+  init_simple()
+  run_simple_n_iter(50)
+  // p = 0 at top (y = 2): p[ny-1,:] = 0
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_p_simple_at(ny - 1, j), 0.0, 1.0e-10))
+  }
+  // Neumann at bottom: p[0,:] = p[1,:]
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_p_simple_at(0, j), get_p_simple_at(1, j), 1.0e-10))
+  }
+}
+
+// ── Test 25: SIMPLE and Chorin produce qualitatively similar vortex ──
+test "simple_vs_chorin_qualitative" {
+  // Run both solvers to a comparable degree of development
+  init_simulation()
+  run_n_steps(200)
+  init_simple()
+  run_simple_n_iter(200)
+  // Both should have negative u at center (backflow confirms vortex)
+  let u_chorin = get_u_center()   // g_u[ny/2][nx/2]
+  let u_simple = get_u_simple_at(ny / 2, nx / 2)
+  assert_true(u_chorin < 0.0)
+  assert_true(u_simple < 0.0)
+}
+
+// ── Test 26: SIMPLE does not corrupt original Chorin solver state ──
+test "simple_independent_of_chorin" {
+  // Run Chorin solver and record center velocity
+  init_simulation()
+  run_n_steps(100)
+  let u_before = get_u_center()
+  // Run SIMPLE iterations – must not touch g_u/g_v/g_p
+  init_simple()
+  run_simple_n_iter(50)
+  let u_after = get_u_center()
+  // Chorin state unchanged
+  assert_true(approx_eq(u_before, u_after, 1.0e-15))
+}
