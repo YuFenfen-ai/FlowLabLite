@@ -371,6 +371,34 @@
 
   <div class="tsep"></div>
 
+  <div class="tsep"></div>
+
+  <!-- Isoline controls -->
+  <span class="tlabel">Isolines:</span>
+  <label class="tlabel" style="cursor:pointer;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="velContourChk" onchange="onContourChange()"> Vel
+  </label>
+  <label class="tlabel" style="cursor:pointer;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="presContourChk" onchange="onContourChange()"> Pres
+  </label>
+  <span class="tlabel">n=</span>
+  <input type="number" id="contourN" value="10" min="2" max="30"
+    style="width:42px;padding:3px 5px;background:var(--c-surface2);border:1px solid var(--c-border);
+           border-radius:5px;color:var(--c-text);font-size:12px;outline:none"
+    oninput="onContourChange()">
+  <select id="contourColor" onchange="onContourChange()"
+    style="padding:4px 6px;background:var(--c-surface2);border:1px solid var(--c-border);
+           border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
+    <option value="auto">Auto color</option>
+    <option value="#ffffff">White</option>
+    <option value="#000000">Black</option>
+    <option value="#ffff00">Yellow</option>
+    <option value="#00ffff">Cyan</option>
+    <option value="#ff8800">Orange</option>
+  </select>
+
+  <div class="tsep"></div>
+
   <!-- Fullscreen -->
   <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Fullscreen</button>
   <!-- CSV download -->
@@ -563,13 +591,17 @@ let activeSolver = 'chorin'; // 'chorin' | 'simple'
 
 // Display settings
 const DS = {
-  bgClass:   'bg-dark',   // canvas-wrapper CSS class
-  velAuto:   true,
-  velMin:    0,
-  velMax:    1,
-  presAuto:  true,
-  presMin:   0,
-  presMax:   1,
+  bgClass:      'bg-dark',   // canvas-wrapper CSS class
+  velAuto:      true,
+  velMin:       0,
+  velMax:       1,
+  presAuto:     true,
+  presMin:      0,
+  presMax:      1,
+  velContours:  false,       // show isolines on velocity canvas
+  presContours: false,       // show isolines on pressure canvas
+  contourN:     10,          // number of isoline levels
+  contourColor: 'auto',      // 'auto' | hex string
 };
 
 // ── Canvas refs ──────────────────────────────────────────────────────────────
@@ -900,6 +932,13 @@ function drawVelocityField() {
     drawArrow(velCtx, px, py, px + pt.u * arrowScale, py - pt.v * arrowScale);
   });
 
+  // Isolines overlay
+  if (DS.velContours) {
+    const col = DS.contourColor === 'auto' ? arrowColor() : DS.contourColor;
+    drawContours(velCtx, activeGrid(), nx, ny, w, h,
+      DS.contourN, minMag, maxMag, pt => pt.magnitude, col);
+  }
+
   // Border & label
   velCtx.strokeStyle = arrowColor();
   velCtx.lineWidth = 2;
@@ -950,9 +989,93 @@ function drawPressureField() {
   }
   presCtx.putImageData(img, 0, 0);
 
+  // Isolines overlay
+  if (DS.presContours) {
+    const col = DS.contourColor === 'auto' ? arrowColor() : DS.contourColor;
+    drawContours(presCtx, activeGrid(), nx, ny, w, h,
+      DS.contourN, minP, maxP, pt => pt.p, col);
+  }
+
   presCtx.strokeStyle = arrowColor();
   presCtx.lineWidth = 2;
   presCtx.strokeRect(1, 1, w - 2, h - 2);
+}
+
+// ── Contour / isoline controls ────────────────────────────────────────────────
+window.onContourChange = function () {
+  DS.velContours  = document.getElementById('velContourChk').checked;
+  DS.presContours = document.getElementById('presContourChk').checked;
+  DS.contourN     = Math.max(2, Math.min(30, parseInt(document.getElementById('contourN').value) || 10));
+  DS.contourColor = document.getElementById('contourColor').value;
+  if (currentData) redrawAll();
+};
+
+// Marching-squares isoline drawing.
+// gridArr  – activeGrid() array of {i,j,…}
+// valFn    – pt → scalar field value to contour
+// nLevels  – number of isolines to draw
+// vMin/vMax– field range
+function drawContours(ctx, gridArr, nx, ny, w, h, nLevels, vMin, vMax, valFn, color) {
+  if (nLevels < 2) return;
+
+  // Build 2D lookup (row i, col j)
+  const F = Array.from({length: ny}, () => new Float64Array(nx));
+  gridArr.forEach(pt => { F[pt.i][pt.j] = valFn(pt); });
+
+  // Canvas coordinate helpers
+  const cx = j => j / (nx - 1) * w;
+  const cy = i => (1 - i / (ny - 1)) * h;
+
+  // Interpolated crossing point along an axis-aligned grid edge
+  // a0 and a1 are the axis-0 indices, b = fixed axis-1 index
+  // dir: 'h' = horizontal edge (fixed i), 'v' = vertical edge (fixed j)
+  const cross = (i0, j0, i1, j1, level) => {
+    const f0 = F[i0][j0], f1 = F[i1][j1];
+    if (f0 === f1) return [cx(j0), cy(i0)];
+    const t = (level - f0) / (f1 - f0);
+    return [cx(j0) + t * (cx(j1) - cx(j0)), cy(i0) + t * (cy(i1) - cy(i0))];
+  };
+
+  // Marching-squares lookup: case → list of [edge-pair, edge-pair] segments
+  // Edges: 0=bottom(i,j)→(i,j+1)  1=right(i,j+1)→(i+1,j+1)
+  //        2=top(i+1,j)→(i+1,j+1) 3=left(i,j)→(i+1,j)
+  const SEGS = {
+    1:  [['b','l']], 2: [['b','r']], 3: [['l','r']], 4: [['r','t']],
+    5:  [['b','r'],['l','t']],       6: [['b','t']], 7: [['l','t']],
+    8:  [['t','l']], 9: [['b','t']], 10:[['b','l'],['r','t']], 11:[['r','t']],
+    12: [['l','r']], 13:[['b','r']], 14:[['b','l']],
+  };
+
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = color;
+
+  for (let k = 1; k < nLevels; k++) {
+    const level = vMin + k / nLevels * (vMax - vMin);
+    ctx.beginPath();
+    for (let i = 0; i < ny - 1; i++) {
+      for (let j = 0; j < nx - 1; j++) {
+        const fBL = F[i][j], fBR = F[i][j+1];
+        const fTL = F[i+1][j], fTR = F[i+1][j+1];
+        const ms = ((fBL >= level) ? 1 : 0) | ((fBR >= level) ? 2 : 0) |
+                   ((fTR >= level) ? 4 : 0) | ((fTL >= level) ? 8 : 0);
+        const segs = SEGS[ms]; if (!segs) continue;
+        for (const [e1, e2] of segs) {
+          const pt = (e) => {
+            if (e==='b') return cross(i,   j,   i,   j+1, level);
+            if (e==='r') return cross(i,   j+1, i+1, j+1, level);
+            if (e==='t') return cross(i+1, j,   i+1, j+1, level);
+            if (e==='l') return cross(i,   j,   i+1, j,   level);
+          };
+          const [ax,ay] = pt(e1), [bx,by] = pt(e2);
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+        }
+      }
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 // ── Colormaps ─────────────────────────────────────────────────────────────────
