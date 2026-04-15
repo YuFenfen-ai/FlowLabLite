@@ -16,7 +16,7 @@ set -euo pipefail
 
 MOON_HOME="$HOME/.moon"
 CORE_BUNDLE="$MOON_HOME/lib/core/_build/wasm-gc/release/bundle"
-EXPORTS="init_simulation,run_all_steps,run_n_steps,get_nx,get_ny,get_nt,get_nit,get_re,get_dx,get_dy,get_dt,get_rho,get_nu,get_step_count,get_u_at,get_velocity_magnitude_at,get_v_at,get_p_at,get_u_center,get_v_center,get_p_center,get_divergence_norm,get_max_velocity_magnitude,get_max_u,get_max_v,get_max_p,get_min_p"
+EXPORTS="init_simulation,run_all_steps,run_n_steps,get_nx,get_ny,get_nt,get_nit,get_re,get_dx,get_dy,get_dt,get_rho,get_nu,get_step_count,get_u_at,get_velocity_magnitude_at,get_v_at,get_p_at,get_u_center,get_v_center,get_p_center,get_divergence_norm,get_max_velocity_magnitude,get_max_u,get_max_v,get_max_p,get_min_p,init_simple,run_simple_n_iter,get_simple_step_count,get_simple_residual,get_u_simple_at,get_v_simple_at,get_p_simple_at,get_max_u_simple,get_simple_divergence_norm"
 
 MODE="${1:-debug}"
 if [[ "$MODE" == "release" ]]; then
