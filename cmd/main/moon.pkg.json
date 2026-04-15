@@ -34,7 +34,16 @@
         "get_max_u",
         "get_max_v",
         "get_max_p",
-        "get_min_p"
+        "get_min_p",
+        "init_simple",
+        "run_simple_n_iter",
+        "get_simple_step_count",
+        "get_simple_residual",
+        "get_u_simple_at",
+        "get_v_simple_at",
+        "get_p_simple_at",
+        "get_max_u_simple",
+        "get_simple_divergence_norm"
       ],
       "export-memory-name": "memory"
     },
@@ -66,7 +75,16 @@
         "get_max_u",
         "get_max_v",
         "get_max_p",
-        "get_min_p"
+        "get_min_p",
+        "init_simple",
+        "run_simple_n_iter",
+        "get_simple_step_count",
+        "get_simple_residual",
+        "get_u_simple_at",
+        "get_v_simple_at",
+        "get_p_simple_at",
+        "get_max_u_simple",
+        "get_simple_divergence_norm"
       ],
       "export-memory-name": "memory"
     }

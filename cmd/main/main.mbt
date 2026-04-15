@@ -569,6 +569,218 @@ fn output_json(
   println("===JSON_DATA_END===")
 }
 
+// ── SIMPLE algorithm (Semi-Implicit Method for Pressure-Linked Equations) ──
+//
+// SIMPLE solves the steady incompressible Navier-Stokes equations iteratively:
+//   1. Solve momentum equations using current p* → intermediate velocities u*, v*
+//   2. Compute continuity residual → pressure-correction source b
+//   3. Solve Poisson equation for pressure correction p'
+//   4. Update:  p = p* + α_p · p'
+//               u = u* − (dt/ρ) · ∂p'/∂x,  v = v* − (dt/ρ) · ∂p'/∂y
+//   5. Apply boundary conditions; compute convergence residual ‖div u‖
+//   Repeat until residual < tolerance.
+//
+// Under-relaxation factors:
+let simple_alpha_p : Double = 0.3   // pressure under-relaxation (stabilises convergence)
+let simple_alpha_u : Double = 0.7   // velocity under-relaxation
+
+// Global SIMPLE state arrays (same 41×41 grid as the original solver)
+let g_u_s : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 {
+    a[i] = Array::make(nx, 0.0)
+  }
+  a
+}
+
+let g_v_s : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 {
+    a[i] = Array::make(nx, 0.0)
+  }
+  a
+}
+
+let g_p_s : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 {
+    a[i] = Array::make(nx, 0.0)
+  }
+  a
+}
+
+// Iteration counter and convergence residual for SIMPLE
+let g_simple_iters    : Array[Int]    = [0]
+let g_simple_residual : Array[Double] = [0.0]
+
+/// Reset the SIMPLE global state to zero so a fresh solve can start.
+pub fn init_simple() -> Unit {
+  g_simple_iters[0]    = 0
+  g_simple_residual[0] = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      g_u_s[i][j] = 0.0
+      g_v_s[i][j] = 0.0
+      g_p_s[i][j] = 0.0
+    }
+  }
+}
+
+/// Return the number of SIMPLE iterations completed since init_simple().
+pub fn get_simple_step_count() -> Int { g_simple_iters[0] }
+
+/// Return the latest continuity residual ‖div u‖ from SIMPLE.
+pub fn get_simple_residual() -> Double { g_simple_residual[0] }
+
+/// Read SIMPLE u-velocity at grid index (i, j).  Returns 0 for out-of-range.
+pub fn get_u_simple_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_u_s[i][j] } else { 0.0 }
+}
+
+/// Read SIMPLE v-velocity at grid index (i, j).  Returns 0 for out-of-range.
+pub fn get_v_simple_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_v_s[i][j] } else { 0.0 }
+}
+
+/// Read SIMPLE pressure at grid index (i, j).  Returns 0 for out-of-range.
+pub fn get_p_simple_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_p_s[i][j] } else { 0.0 }
+}
+
+/// Return maximum absolute u from the SIMPLE field.
+pub fn get_max_u_simple() -> Double {
+  let mut m = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let v = g_u_s[i][j].abs()
+      if v > m { m = v }
+    }
+  }
+  m
+}
+
+/// Return mean |∂u/∂x + ∂v/∂y| for the SIMPLE velocity field.
+pub fn get_simple_divergence_norm() -> Double {
+  let mut sum = 0.0
+  let count = (ny - 2) * (nx - 2)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let div = (g_u_s[i][j + 1] - g_u_s[i][j - 1]) / (2.0 * dx) +
+                (g_v_s[i + 1][j] - g_v_s[i - 1][j]) / (2.0 * dy)
+      sum = sum + div.abs()
+    }
+  }
+  if count > 0 { sum / count.to_double() } else { 0.0 }
+}
+
+// ── Core SIMPLE iteration ──
+//
+// One SIMPLE sweep:
+//   (a) momentum predictor → u*, v*
+//   (b) pressure-correction Poisson solve → p'
+//   (c) field update with under-relaxation
+//   (d) boundary conditions
+fn simple_one_iter(
+  u  : Array[Array[Double]],
+  v  : Array[Array[Double]],
+  p  : Array[Array[Double]],
+) -> Unit {
+  // Working arrays (allocated per-call; 41×41 is small so overhead is acceptable)
+  let u_star = create_zeros_2d(ny, nx)
+  let v_star = create_zeros_2d(ny, nx)
+  let b      = create_zeros_2d(ny, nx)
+  let p_corr = create_zeros_2d(ny, nx)
+
+  // ── (a) Momentum predictor (explicit Euler with under-relaxation) ──
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let conv_u_x = u[i][j] * dt / dx * (u[i][j] - u[i][j - 1])
+      let conv_u_y = v[i][j] * dt / dy * (u[i][j] - u[i - 1][j])
+      let pg_u     = dt / (2.0 * rho * dx) * (p[i][j + 1] - p[i][j - 1])
+      let visc_u_x = nu * dt / (dx * dx) * (u[i][j + 1] - 2.0 * u[i][j] + u[i][j - 1])
+      let visc_u_y = nu * dt / (dy * dy) * (u[i + 1][j] - 2.0 * u[i][j] + u[i - 1][j])
+      let visc_u   = visc_u_x + visc_u_y
+      let u_new    = u[i][j] - conv_u_x - conv_u_y - pg_u + visc_u
+      u_star[i][j] = simple_alpha_u * u_new + (1.0 - simple_alpha_u) * u[i][j]
+
+      let conv_v_x = u[i][j] * dt / dx * (v[i][j] - v[i][j - 1])
+      let conv_v_y = v[i][j] * dt / dy * (v[i][j] - v[i - 1][j])
+      let pg_v     = dt / (2.0 * rho * dy) * (p[i + 1][j] - p[i - 1][j])
+      let visc_v_x = nu * dt / (dx * dx) * (v[i][j + 1] - 2.0 * v[i][j] + v[i][j - 1])
+      let visc_v_y = nu * dt / (dy * dy) * (v[i + 1][j] - 2.0 * v[i][j] + v[i - 1][j])
+      let visc_v   = visc_v_x + visc_v_y
+      let v_new    = v[i][j] - conv_v_x - conv_v_y - pg_v + visc_v
+      v_star[i][j] = simple_alpha_u * v_new + (1.0 - simple_alpha_u) * v[i][j]
+    }
+  }
+
+  // BCs for u*, v*
+  for j = 0; j < nx; j = j + 1 {
+    u_star[0][j]      = 0.0
+    u_star[ny - 1][j] = 1.0   // lid
+    v_star[0][j]      = 0.0
+    v_star[ny - 1][j] = 0.0
+  }
+  for i = 0; i < ny; i = i + 1 {
+    u_star[i][0]      = 0.0
+    u_star[i][nx - 1] = 0.0
+    v_star[i][0]      = 0.0
+    v_star[i][nx - 1] = 0.0
+  }
+  u_star[ny - 1][0]      = 1.0
+  u_star[ny - 1][nx - 1] = 1.0
+
+  // ── (b) Build pressure-correction source b = −(∂u*/∂x + ∂v*/∂y) ──
+  build_up_b_array(b, rho, dt, u_star, v_star, dx, dy) |> ignore
+
+  // ── (c) Solve Poisson for p' ──
+  pressure_poisson_array(p_corr, dx, dy, b) |> ignore
+
+  // ── (d) Update fields with under-relaxation ──
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      p[i][j] = p[i][j] + simple_alpha_p * p_corr[i][j]
+      u[i][j] = u_star[i][j] - dt / (2.0 * rho * dx) * (p_corr[i][j + 1] - p_corr[i][j - 1])
+      v[i][j] = v_star[i][j] - dt / (2.0 * rho * dy) * (p_corr[i + 1][j] - p_corr[i - 1][j])
+    }
+  }
+
+  // Pressure BCs (same as existing solver)
+  for i = 0; i < ny; i = i + 1 {
+    p[i][0]      = p[i][1]
+    p[i][nx - 1] = p[i][nx - 2]
+  }
+  for j = 0; j < nx; j = j + 1 {
+    p[0][j]      = p[1][j]
+    p[ny - 1][j] = 0.0
+  }
+
+  // Velocity BCs
+  for j = 0; j < nx; j = j + 1 {
+    u[0][j]      = 0.0
+    u[ny - 1][j] = 1.0
+    v[0][j]      = 0.0
+    v[ny - 1][j] = 0.0
+  }
+  for i = 0; i < ny; i = i + 1 {
+    u[i][0]      = 0.0
+    u[i][nx - 1] = 0.0
+    v[i][0]      = 0.0
+    v[i][nx - 1] = 0.0
+  }
+}
+
+/// Advance the SIMPLE solver by n iterations.
+/// Call init_simple() once before the first invocation.
+pub fn run_simple_n_iter(n : Int) -> Unit {
+  for _k = 0; _k < n; _k = _k + 1 {
+    simple_one_iter(g_u_s, g_v_s, g_p_s)
+  }
+  g_simple_iters[0] = g_simple_iters[0] + n
+  // Compute and cache the continuity residual after this batch
+  g_simple_residual[0] = get_simple_divergence_norm()
+}
+
 // Fibonacci helper – used only by the bench test in main_bench.mbt.
 fn fib(n : Int) -> Int {
   if n < 2 { return n }
