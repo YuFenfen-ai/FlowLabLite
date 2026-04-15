@@ -344,9 +344,11 @@ fn generate_mesh_grid() -> (Array[Array[Double]], Array[Array[Double]]) {
   
   (x, y)
 }
-// Build up the b array for pressure Poisson equation
-fn build_up_b_array(b : Array[Array[Double]], rho : Double, dt : Double, 
-                   u : Array[Array[Double]], v : Array[Array[Double]], 
+// [Layer 2 input] Build the right-hand-side source term b for the pressure
+// Poisson linear system  Ax = b,  where x = p (Chorin) or x = p' (SIMPLE).
+// b encodes the velocity divergence: b = ρ/dt · ∇·u  (plus higher-order terms).
+fn build_up_b_array(b : Array[Array[Double]], rho : Double, dt : Double,
+                   u : Array[Array[Double]], v : Array[Array[Double]],
                    dx : Double, dy : Double) -> Array[Array[Double]] {
   
   // Equivalent to b[1:-1, 1:-1] = ... in Python
@@ -377,8 +379,11 @@ fn build_up_b_array(b : Array[Array[Double]], rho : Double, dt : Double,
   
   b
 }
-// Pressure Poisson equation solver
-fn pressure_poisson_array(p : Array[Array[Double]], dx : Double, dy : Double, 
+// [Layer 2: Linear equation solver] Gauss-Seidel iterative solver for the
+// pressure Poisson equation  ∇²p = b  (or ∇²p' = b for SIMPLE).
+// Performs `nit` sweeps over interior nodes; boundary conditions are re-applied
+// each sweep.  Both Chorin and SIMPLE share this single implementation.
+fn pressure_poisson_array(p : Array[Array[Double]], dx : Double, dy : Double,
                          b : Array[Array[Double]]) -> Array[Array[Double]] {
   let pn = create_zeros_2d(ny, nx)
   let dx2 = dx * dx
@@ -423,7 +428,14 @@ fn pressure_poisson_array(p : Array[Array[Double]], dx : Double, dy : Double,
   
   p
 }
-// Main cavity flow solver function
+// [Layer 1: Pressure-velocity coupling algorithm] Chorin projection method
+// (Chorin 1968, operator splitting / fractional-step method):
+//   Each time step:
+//     1. Explicit scheme velocity prediction (no linear system – direct substitution)
+//     2. Build Poisson source term  b = ρ/dt · ∇·ũ
+//     3. Gauss-Seidel solve  ∇²p = b  (Layer 2, `nit` inner iterations)
+//     4. Project  u ← ũ − (dt/ρ) ∇p  (explicit update, enforces ∇·u = 0)
+//   Repeats for `nt` time steps (transient simulation).
 ///|
 fn cavity_flow_array(
   nt : Int,
@@ -444,13 +456,13 @@ fn cavity_flow_array(
     copy_2d_array(u, un)
     copy_2d_array(v, vn)
 
-    // Build up b array
+    // Build divergence source term b  [Layer 2 input]
     build_up_b_array(b, rho, dt, u, v, dx, dy) |> ignore
 
-    // Solve pressure Poisson equation
+    // Gauss-Seidel solve  ∇²p = b  [Layer 2 linear equation solver]
     pressure_poisson_array(p, dx, dy, b) |> ignore
 
-    // Update u velocity component
+    // Explicit scheme velocity update (projection step, no linear system)
     for i = 1; i < ny - 1; i = i + 1 {
       for j = 1; j < nx - 1; j = j + 1 {
         let conv_u_x = un[i][j] * dt / dx * (un[i][j] - un[i][j - 1])
@@ -671,12 +683,14 @@ fn output_json(
   println("===JSON_DATA_END===")
 }
 
-// ── SIMPLE algorithm (Semi-Implicit Method for Pressure-Linked Equations) ──
+// ── [Layer 1: Pressure-velocity coupling algorithm] SIMPLE ──────────────────
+// Semi-Implicit Method for Pressure-Linked Equations
+// (Patankar & Spalding 1972, steady-state predictor-corrector iteration):
 //
-// SIMPLE solves the steady incompressible Navier-Stokes equations iteratively:
-//   1. Solve momentum equations using current p* → intermediate velocities u*, v*
-//   2. Compute continuity residual → pressure-correction source b
-//   3. Solve Poisson equation for pressure correction p'
+// Each SIMPLE sweep:
+//   1. Momentum predictor (explicit scheme): u*, v* from current p*  – no linear system
+//   2. Build pressure-correction source  b = −∇·u*  (Layer 2 input)
+//   3. Gauss-Seidel solve  ∇²p' = b  (Layer 2, `nit` inner iterations)
 //   4. Update:  p = p* + α_p · p'
 //               u = u* − (dt/ρ) · ∂p'/∂x,  v = v* − (dt/ρ) · ∂p'/∂y
 //   5. Apply boundary conditions; compute convergence residual ‖div u‖
@@ -775,13 +789,12 @@ pub fn get_simple_divergence_norm() -> Double {
   if count > 0 { sum / count.to_double() } else { 0.0 }
 }
 
-// ── Core SIMPLE iteration ──
-//
-// One SIMPLE sweep:
-//   (a) momentum predictor → u*, v*
-//   (b) pressure-correction Poisson solve → p'
-//   (c) field update with under-relaxation
-//   (d) boundary conditions
+// One SIMPLE sweep (Layer 1 inner step):
+//   (a) Momentum predictor (explicit scheme) → u*, v*  [no linear system]
+//   (b) Build divergence source b  [Layer 2 input]
+//   (c) Gauss-Seidel solve  ∇²p' = b  [Layer 2 linear equation solver]
+//   (d) Field update with under-relaxation
+//   (e) Boundary conditions
 fn simple_one_iter(
   u  : Array[Array[Double]],
   v  : Array[Array[Double]],
@@ -835,7 +848,7 @@ fn simple_one_iter(
   // ── (b) Build pressure-correction source b = −(∂u*/∂x + ∂v*/∂y) ──
   build_up_b_array(b, rho, dt, u_star, v_star, dx, dy) |> ignore
 
-  // ── (c) Solve Poisson for p' ──
+  // ── (c) Gauss-Seidel solve  ∇²p' = b  (Layer 2 linear equation solver) ──
   pressure_poisson_array(p_corr, dx, dy, b) |> ignore
 
   // ── (d) Update fields with under-relaxation ──
