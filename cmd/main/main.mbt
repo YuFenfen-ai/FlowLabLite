@@ -31,14 +31,51 @@ let dy : Double = 2.0 / (ny - 1).to_double()
 let rho = 1.0
 let nu = 0.1
 let dt = 0.001
-// `now_seconds` is normally provided by the host (native object or DLL).
-// If you build and provide `now_clock` (DLL / native object), it will override
-// this. For now provide a safe fallback implementation so `moon build` succeeds
-// in environments without the host symbol. The fallback returns 0.0 meaning
-// "timing unavailable".
-// Marked priv so it does not appear in the public API; main() calls it internally.
-fn now_seconds() -> Double {
-  0.0
+// ── Local run configuration ───────────────────────────────────────────────────
+// These constants control `moon run cmd/main` (local workflow) only.
+// They have NO effect on the exported WASM API used by the browser viewer.
+
+/// Master on/off switch for timing output.
+/// false = suppress all [Timing] lines (solvers still run normally).
+let timing_enabled : Bool = true
+
+/// Time the Chorin solver init and run phases individually.
+let time_chorin_phase : Bool = true
+
+/// Time the SIMPLE solver init and run phases individually.
+let time_simple_phase : Bool = true
+
+/// Include the Chorin (projection-method, explicit time-marching) solver.
+let run_chorin : Bool = true
+
+/// Chorin time steps to execute locally.  Maximum = nt = 500.
+/// Set to e.g. 100 for a faster preview run.
+let local_nt : Int = nt
+
+/// Include the SIMPLE (steady-state, pressure-correction) solver.
+let run_simple : Bool = true
+
+/// Number of SIMPLE iterations to execute locally.
+let local_simple_n : Int = 100
+
+// ── Timing helper ─────────────────────────────────────────────────────────────
+// Backed by @bench.monotonic_clock_start / monotonic_clock_end, which are
+// implemented natively for both --target native and --target wasm via the
+// Wasmtime host import "__moonbit_time_unstable"."instant_now".
+
+/// Execute f(), measure wall-clock elapsed time, return milliseconds.
+/// Prints a labelled line when enabled=true. Returns 0.0 when enabled=false.
+fn timed(enabled : Bool, label : String, f : () -> Unit) -> Double {
+  if not(enabled) {
+    f()
+    0.0
+  } else {
+    let ts = @bench.monotonic_clock_start()
+    f()
+    let ms = @bench.monotonic_clock_end(ts) / 1000.0
+    println("[Timing] \{label}: \{ms} ms")
+    ms
+  }
 }
 
 // ── Global simulation state (written by init_simulation / run_all_steps) ──
@@ -494,67 +531,74 @@ fn cavity_flow_array(
   (u, v, p)
 }
 
-// ── JSON output for local run results ──
+// ── JSON output for local run results ────────────────────────────────────────
+//
+// Outputs a single JSON document that contains results for BOTH solvers (Chorin
+// and SIMPLE).  The "statistics"/"grid" keys hold Chorin data for backward
+// compatibility with existing local_viewer.html files; the "simple_statistics"/
+// "simple_grid" keys hold SIMPLE data.  "config.solver" records which solvers
+// actually ran ("chorin" | "simple" | "both").
 
-/// Output simulation grid data as JSON to stdout.
-/// Format: { "config": {...}, "statistics": {...}, "grid": [...] }
-/// Used by local_viewer.html to visualize locally computed results.
-fn output_json(
+/// Compute field statistics over a u/v/p grid.
+/// Returns (max_|u|, max_|v|, max_p, min_p, max_|V|, div_norm, center_u, center_v, center_p).
+fn field_stats(
   u : Array[Array[Double]],
   v : Array[Array[Double]],
   p : Array[Array[Double]],
-  nt_actual : Int,
-  elapsed_secs : Double,
-) -> Unit {
-  // Statistics
-  let mut max_u = 0.0
-  let mut max_v = 0.0
-  let mut max_p = p[0][0]
-  let mut min_p = p[0][0]
-  let mut max_mag = 0.0
+) -> (Double, Double, Double, Double, Double, Double, Double, Double, Double) {
+  let mut mu = 0.0; let mut mv = 0.0
+  let mut mp = p[0][0]; let mut np_ = p[0][0]; let mut mm = 0.0
   for i = 0; i < ny; i = i + 1 {
     for j = 0; j < nx; j = j + 1 {
-      let au = u[i][j].abs()
-      let av = v[i][j].abs()
-      if au > max_u { max_u = au }
-      if av > max_v { max_v = av }
-      if p[i][j] > max_p { max_p = p[i][j] }
-      if p[i][j] < min_p { min_p = p[i][j] }
+      let au = u[i][j].abs(); let av = v[i][j].abs()
+      if au > mu { mu = au }
+      if av > mv { mv = av }
+      if p[i][j] > mp { mp = p[i][j] }
+      if p[i][j] < np_ { np_ = p[i][j] }
       let mag = (u[i][j] * u[i][j] + v[i][j] * v[i][j]).sqrt()
-      if mag > max_mag { max_mag = mag }
+      if mag > mm { mm = mag }
     }
   }
-  // Divergence norm
-  let mut div_sum = 0.0
-  let div_count = (ny - 2) * (nx - 2)
+  let mut ds = 0.0
+  let dc = (ny - 2) * (nx - 2)
   for i = 1; i < ny - 1; i = i + 1 {
     for j = 1; j < nx - 1; j = j + 1 {
-      let div = (u[i][j + 1] - u[i][j - 1]) / (2.0 * dx) +
-                (v[i + 1][j] - v[i - 1][j]) / (2.0 * dy)
-      div_sum = div_sum + div.abs()
+      let d = (u[i][j + 1] - u[i][j - 1]) / (2.0 * dx) +
+              (v[i + 1][j] - v[i - 1][j]) / (2.0 * dy)
+      ds = ds + d.abs()
     }
   }
-  let div_norm = if div_count > 0 { div_sum / div_count.to_double() } else { 0.0 }
-  let mid_i = ny / 2
-  let mid_j = nx / 2
+  let dn = if dc > 0 { ds / dc.to_double() } else { 0.0 }
+  let mi = ny / 2; let mj = nx / 2
+  (mu, mv, mp, np_, mm, dn, u[mi][mj], v[mi][mj], p[mi][mj])
+}
 
-  println("===JSON_DATA_START===")
-  println("{")
-  println("  \"config\": {")
-  println("    \"nx\": \{nx}, \"ny\": \{ny}, \"nt\": \{nt_actual},")
-  println("    \"nit\": \{nit}, \"dt\": \{dt}, \"dx\": \{dx}, \"dy\": \{dy},")
-  println("    \"rho\": \{rho}, \"nu\": \{nu}, \"re\": \{1.0 * 2.0 / nu}")
-  println("  },")
-  println("  \"statistics\": {")
-  println("    \"max_u\": \{max_u}, \"max_v\": \{max_v},")
-  println("    \"max_p\": \{max_p}, \"min_p\": \{min_p},")
-  println("    \"max_velocity_magnitude\": \{max_mag},")
-  println("    \"divergence_norm\": \{div_norm},")
-  println("    \"center_u\": \{u[mid_i][mid_j]}, \"center_v\": \{v[mid_i][mid_j]},")
-  println("    \"center_p\": \{p[mid_i][mid_j]},")
-  println("    \"elapsed_seconds\": \{elapsed_secs}")
-  println("  },")
-  println("  \"grid\": [")
+/// Emit the JSON "statistics" object for a solver's field.
+fn emit_stats(
+  mu : Double, mv : Double, mp : Double, np_ : Double,
+  mm : Double, dn : Double, cu : Double, cv : Double, cp : Double,
+  elapsed_ms : Double,
+) -> Unit {
+  println("    \"max_u\": \{mu}, \"max_v\": \{mv},")
+  println("    \"max_p\": \{mp}, \"min_p\": \{np_},")
+  println("    \"max_velocity_magnitude\": \{mm},")
+  println("    \"divergence_norm\": \{dn},")
+  println("    \"center_u\": \{cu}, \"center_v\": \{cv},")
+  println("    \"center_p\": \{cp},")
+  println("    \"elapsed_seconds\": \{elapsed_ms / 1000.0}")
+}
+
+/// Emit a named JSON grid array for a u/v/p field.
+/// json_key  – the JSON property name (e.g. "grid" or "simple_grid")
+/// trailing_comma – append a "," after the closing "]" when true
+fn emit_grid(
+  json_key : String,
+  u : Array[Array[Double]],
+  v : Array[Array[Double]],
+  p : Array[Array[Double]],
+  trailing_comma : Bool,
+) -> Unit {
+  println("  \"\{json_key}\": [")
   for i = 0; i < ny; i = i + 1 {
     for j = 0; j < nx; j = j + 1 {
       let x_pos = 2.0 * j.to_double() / (nx - 1).to_double()
@@ -564,7 +608,65 @@ fn output_json(
       println("    {\"i\":\{i},\"j\":\{j},\"x\":\{x_pos},\"y\":\{y_pos},\"u\":\{u[i][j]},\"v\":\{v[i][j]},\"p\":\{p[i][j]},\"magnitude\":\{mag}}\{comma}")
     }
   }
-  println("  ]")
+  if trailing_comma {
+    println("  ],")
+  } else {
+    println("  ]")
+  }
+}
+
+/// Output full dual-solver JSON to stdout (delimited by JSON_DATA markers).
+///
+/// Parameters:
+///   u_c/v_c/p_c  – Chorin final fields (g_u / g_v / g_p)
+///   nt_c         – Chorin steps executed
+///   u_s/v_s/p_s  – SIMPLE final fields (g_u_s / g_v_s / g_p_s)
+///   n_s          – SIMPLE iterations executed
+///   res_s        – SIMPLE last continuity residual
+///   ci/cr/si/sr  – per-phase timing in ms (0.0 when timing disabled)
+///   total_ms     – total program elapsed ms
+fn output_json(
+  u_c : Array[Array[Double]], v_c : Array[Array[Double]], p_c : Array[Array[Double]],
+  nt_c : Int,
+  u_s : Array[Array[Double]], v_s : Array[Array[Double]], p_s : Array[Array[Double]],
+  n_s : Int, res_s : Double,
+  ci_ms : Double, cr_ms : Double,
+  si_ms : Double, sr_ms : Double,
+  total_ms : Double,
+) -> Unit {
+  let solver_str = if run_chorin && run_simple { "both" }
+                   else if run_chorin { "chorin" }
+                   else { "simple" }
+
+  let (cmu, cmv, cmp, cnp, cmm, cdn, ccu, ccv, ccp) = field_stats(u_c, v_c, p_c)
+  let (smu, smv, smp, snp, smm, sdn, scu, scv, scp) = field_stats(u_s, v_s, p_s)
+
+  println("===JSON_DATA_START===")
+  println("{")
+  println("  \"config\": {")
+  println("    \"nx\": \{nx}, \"ny\": \{ny}, \"nt\": \{nt_c},")
+  println("    \"nit\": \{nit}, \"dt\": \{dt}, \"dx\": \{dx}, \"dy\": \{dy},")
+  println("    \"rho\": \{rho}, \"nu\": \{nu}, \"re\": \{1.0 * 2.0 / nu},")
+  println("    \"solver\": \"\{solver_str}\",")
+  println("    \"simple_iters\": \{n_s}")
+  println("  },")
+  println("  \"timing\": {")
+  println("    \"enabled\": \{timing_enabled},")
+  println("    \"chorin_init_ms\": \{ci_ms}, \"chorin_run_ms\": \{cr_ms},")
+  println("    \"simple_init_ms\": \{si_ms}, \"simple_run_ms\": \{sr_ms},")
+  println("    \"total_ms\": \{total_ms}")
+  println("  },")
+  // ── Chorin section (backward-compatible keys "statistics" + "grid") ──
+  println("  \"statistics\": {")
+  emit_stats(cmu, cmv, cmp, cnp, cmm, cdn, ccu, ccv, ccp, ci_ms + cr_ms)
+  println("  },")
+  emit_grid("grid", u_c, v_c, p_c, true)
+  // ── SIMPLE section ──
+  println("  \"simple_statistics\": {")
+  println("    \"residual\": \{res_s},")
+  emit_stats(smu, smv, smp, snp, smm, sdn, scu, scv, scp, si_ms + sr_ms)
+  println("  },")
+  emit_grid("simple_grid", u_s, v_s, p_s, false)
   println("}")
   println("===JSON_DATA_END===")
 }
@@ -790,173 +892,77 @@ fn fib(n : Int) -> Int {
   return fib(n - 1) + fib(n - 2)
 }
 
-// Function to write velocity data to a text file
-fn write_velocity_to_file(u : Array[Array[Double]], v : Array[Array[Double]], 
-                         x : Array[Array[Double]], y : Array[Array[Double]], 
-                         filename : String) -> Unit {
-  // Note: MoonBit doesn't have built-in file I/O in the standard library
-  // This is a placeholder implementation that would need platform-specific file I/O
-  println("Writing velocity data to file: \{filename}")
-  println("File format: x, y, u, v, velocity_magnitude")
-  println("Data points:")
-  
-  for i = 0; i < ny; i = i + 1 {
-    for j = 0; j < nx; j = j + 1 {
-      let x_pos = x[i][j]
-      let y_pos = y[i][j]
-      let u_val = u[i][j]
-      let v_val = v[i][j]
-      let vel_mag = (u_val * u_val + v_val * v_val).sqrt()
-      
-      // In a real implementation, this would write to a file
-      // For now, we'll print to console with file-like formatting
-      println("\{x_pos}, \{y_pos}, \{u_val}, \{v_val}, \{vel_mag}")
-    }
-  }
-  
-  println("Velocity data written to \{filename} (simulated)")
-}
 
-// Main function to run the cavity flow simulation
+// ── Local entry point ─────────────────────────────────────────────────────────
+//
+// `moon run cmd/main [--target wasm]`
+//
+// Controls: edit the constants at the top of this file (run_chorin, run_simple,
+// local_nt, local_simple_n, timing_enabled, time_chorin_phase, time_simple_phase).
+//
+// Workflow:
+//   1. bash run_local.sh          → runs both solvers, writes results.json
+//   2. Open cmd/main/local_viewer.html in a browser, drag results.json in.
+//   3. Use the Chorin / SIMPLE tab to switch between solver views.
 fn main {
-  // Program timing placeholders.
-  // NOTE: MoonBit may not provide a built-in timing API in this environment.
-  // To enable accurate timing, bind a host function (e.g., JS `Date.now()` for WASM
-  // or a native clock) to return a Double seconds-since-epoch value and assign
-  // it to `program_start` below.
-  let program_start = now_seconds()
-  let have_timer = program_start > 0.0
+  let prog_ts = @bench.monotonic_clock_start()
 
-  println("=== 2D Cavity Flow Solver (Array-based Implementation) ===")
-  println("Grid: \{nx}x\{ny}, Time steps: \{nt}")
-  println("Parameters: rho=\{rho}, nu=\{nu}, dt=\{dt}")
+  println("=== FlowLabLite – Local CFD Solver ===")
+  println("Grid: \{nx}×\{ny}  |  Re = \{1.0 * 2.0 / nu}")
+  if run_chorin { println("  Chorin : \{local_nt} steps   (nt_max = \{nt})") }
+  if run_simple { println("  SIMPLE : \{local_simple_n} iterations") }
   println("")
-  
-  // Initialize arrays
-  let u = create_zeros_2d(ny, nx)
-  let v = create_zeros_2d(ny, nx)
-  let p = create_zeros_2d(ny, nx)
-  
-  // Generate mesh grid (修正：正确获取返回值)
-  let (x, y) = generate_mesh_grid()
-  
-  // Run simulation with reduced time steps for testing
-  let nt_test = 100
-  println("Running simulation...")
-  // Simulation timing placeholders. Replace `sim_start`/`sim_end` with real
-  // timestamps if you bind a host timing function.
-  let sim_start = now_seconds()
 
-  let (u_final, v_final, p_final) = cavity_flow_array(nt_test, u, v, dt, dx, dy, p, rho, nu)
+  // ── Chorin (projection method, explicit time-marching) ─────────────────────
+  let c_init_ms = if run_chorin {
+    timed(timing_enabled && time_chorin_phase, "Chorin init", fn() {
+      init_simulation()
+    })
+  } else { 0.0 }
 
-  let sim_end = now_seconds()
+  let c_run_ms = if run_chorin {
+    timed(timing_enabled && time_chorin_phase, "Chorin \{local_nt} steps", fn() {
+      run_n_steps(local_nt)
+    })
+  } else { 0.0 }
 
-  if sim_start > 0.0 && sim_end > 0.0 {
-    let sim_elapsed = sim_end - sim_start
-    println("Simulation runtime (seconds): \{sim_elapsed}")
-  } else {
-    println("Simulation runtime: timing API unavailable in this environment")
-  }
-  
-  // Post-processing: calculate velocity magnitude at center
-  let mid_i = ny / 2
-  let mid_j = nx / 2
-  let u_center = u_final[mid_i][mid_j]
-  let v_center = v_final[mid_i][mid_j]
-  let p_center = p_final[mid_i][mid_j]
-  let vel_mag_center = (u_center * u_center + v_center * v_center).sqrt()
-  
-  println("")
-  println("=== Post-processing Results ===")
-  println("Results at center (\{mid_i}, \{mid_j}):")
-  println("  u = \{u_center}")
-  println("  v = \{v_center}")
-  println("  p = \{p_center}")
-  println("  |V| = \{vel_mag_center}")
-  println("  X at center = \{x[mid_i][mid_j]}")  // 现在可以使用X
-  println("  Y at center = \{y[mid_i][mid_j]}")  // 现在可以使用Y
-  
-  // Print some velocity values along the top lid
-  println("")
-  println("Top lid velocity profile:")
-  for j = 0; j < nx; j = j + 5 {
-    let x_pos = x[ny - 1][j]  // 使用mesh grid的X坐标
-    println("  x=\{x_pos}: u=\{u_final[ny - 1][j]}")
-  }
-  
-  // Find maximum values
-  let mut max_u = 0.0
-  let mut max_v = 0.0
-  let mut max_p = 0.0
-  let mut min_p = 0.0
-  
-  for i = 0; i < ny; i = i + 1 {
-    for j = 0; j < nx; j = j + 1 {
-      let u_val = u_final[i][j]
-      let v_val = v_final[i][j]
-      let p_val = p_final[i][j]
-      
-      if u_val.abs() > max_u { max_u = u_val.abs() }
-      if v_val.abs() > max_v { max_v = v_val.abs() }
-      if p_val > max_p { max_p = p_val }
-      if p_val < min_p { min_p = p_val }
+  // ── SIMPLE (pressure-correction, steady-state) ─────────────────────────────
+  let s_init_ms = if run_simple {
+    timed(timing_enabled && time_simple_phase, "SIMPLE init", fn() {
+      init_simple()
+    })
+  } else { 0.0 }
+
+  let s_run_ms = if run_simple {
+    timed(timing_enabled && time_simple_phase, "SIMPLE \{local_simple_n} iters", fn() {
+      run_simple_n_iter(local_simple_n)
+    })
+  } else { 0.0 }
+
+  let total_ms = @bench.monotonic_clock_end(prog_ts) / 1000.0
+
+  // ── Timing summary ─────────────────────────────────────────────────────────
+  if timing_enabled {
+    println("")
+    println("=== Timing Summary ===")
+    if run_chorin {
+      println("  Chorin init : \{c_init_ms} ms")
+      println("  Chorin run  : \{c_run_ms} ms")
     }
-  }
-  
-  println("")
-  println("Field statistics:")
-  println("  Max |u|: \{max_u}")
-  println("  Max |v|: \{max_v}")
-  println("  Pressure range: [\{min_p}, \{max_p}]")
-  
-  // Calculate velocity magnitude at a few sample points
-  println("")
-  println("Velocity magnitude at sample points:")
-  let sample_points = [(5, 5), (10, 10), (20, 20), (30, 30)]
-  for i = 0; i < sample_points.length(); i = i + 1 {
-    let (si, sj) = sample_points[i]
-    if si < ny && sj < nx {
-      let u_sample = u_final[si][sj]
-      let v_sample = v_final[si][sj]
-      let vel_mag_sample = (u_sample * u_sample + v_sample * v_sample).sqrt()
-      println("  Point (\{si}, \{sj}): |V| = \{vel_mag_sample}")
+    if run_simple {
+      println("  SIMPLE init : \{s_init_ms} ms")
+      println("  SIMPLE run  : \{s_run_ms} ms")
     }
-  }
-  // Add this code after the sample points calculation and before the final completion message
-  println("")
-  println("=== Writing velocity data to file ===")
-
-  // Write all velocity data to a text file
-  write_velocity_to_file(u_final, v_final, x, y, "velocity_field.txt")
-
-  println("Velocity data export completed.")
-  println("")
-  println("=== Simulation completed successfully ===")
-  println("")
-  println("Note: Plotting functions are not implemented:")
-  println("- 3D surface plots (equivalent to matplotlib's ax.plot_surface)")
-  println("- Contour plots (equivalent to pyplot.contourf)")  
-  println("- Vector field plots (equivalent to pyplot.quiver)")
-  println("- Image saving (equivalent to pyplot.savefig)")
-  println("The computed data is available in u_final, v_final, p_final arrays")
-  println("for external visualization tools.")
-
-  // Program end time placeholder. Replace `program_end` with a real timestamp
-  // from a host binding to enable total runtime reporting.
-  let program_end = now_seconds()
-
-  let total_elapsed = if have_timer && program_start > 0.0 && program_end > 0.0 {
-    let e = program_end - program_start
-    println("Total program runtime (seconds): \{e}")
-    e
-  } else {
-    println("Total program runtime: timing API unavailable in this environment")
-    0.0
+    println("  Total       : \{total_ms} ms")
   }
 
-  // Output JSON data block for local_viewer.html consumption
+  // ── JSON output ────────────────────────────────────────────────────────────
   println("")
-  println("=== Generating JSON output for browser viewer ===")
-  output_json(u_final, v_final, p_final, nt_test, total_elapsed)
-  println("=== JSON output complete – load local_viewer.html to visualize ===")
+  println("=== Generating JSON for local_viewer.html ===")
+  output_json(
+    g_u, g_v, g_p, local_nt,
+    g_u_s, g_v_s, g_p_s, local_simple_n, g_simple_residual[0],
+    c_init_ms, c_run_ms, s_init_ms, s_run_ms, total_ms,
+  )
+  println("=== Done – drag results.json into cmd/main/local_viewer.html ===")
 }
