@@ -401,6 +401,31 @@
 
   <!-- Fullscreen -->
   <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Fullscreen</button>
+
+  <div class="tsep"></div>
+
+  <!-- Export -->
+  <span class="tlabel">Export:</span>
+  <select id="exportField"
+    style="padding:4px 6px;background:var(--c-surface2);border:1px solid var(--c-border);
+           border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
+    <option value="velocity">Velocity</option>
+    <option value="pressure">Pressure</option>
+    <option value="both">Both</option>
+  </select>
+  <select id="exportFmt"
+    style="padding:4px 6px;background:var(--c-surface2);border:1px solid var(--c-border);
+           border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
+    <option value="png">PNG</option>
+    <option value="jpg">JPEG</option>
+    <option value="svg">SVG</option>
+  </select>
+  <span class="tlabel">px:</span>
+  <input type="number" id="exportPx" value="1024" min="256" max="4096" step="256"
+    style="width:56px;padding:3px 5px;background:var(--c-surface2);border:1px solid var(--c-border);
+           border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
+  <button class="btn primary" id="btnExport">⬇ Export</button>
+
   <!-- CSV download -->
   <button class="btn" id="btnCsv">⬇ CSV</button>
 </div>
@@ -1116,6 +1141,125 @@ function drawArrow(ctx, x1, y1, x2, y2) {
   ctx.moveTo(x2, y2);
   ctx.lineTo(x2 - al * Math.cos(ang + a), y2 - al * Math.sin(ang + a));
   ctx.stroke();
+}
+
+// ── Export image ─────────────────────────────────────────────────────────────
+document.getElementById('btnExport').addEventListener('click', exportImage);
+
+function exportImage() {
+  if (!currentData) { alert('No data loaded'); return; }
+  const field  = document.getElementById('exportField').value;  // 'velocity'|'pressure'|'both'
+  const fmt    = document.getElementById('exportFmt').value;    // 'png'|'jpg'|'svg'
+  const px     = Math.max(256, Math.min(4096, parseInt(document.getElementById('exportPx').value) || 1024));
+  const solver = activeSolver;
+  const stamp  = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+
+  if (fmt === 'svg') {
+    exportSVG(field, px, solver, stamp);
+    return;
+  }
+
+  const targets = field === 'both'
+    ? [['velocity', velCanvas, 'vel'], ['pressure', presCanvas, 'pres']]
+    : field === 'velocity'
+      ? [['velocity', velCanvas, 'vel']]
+      : [['pressure', presCanvas, 'pres']];
+
+  for (const [name, srcCanvas, tag] of targets) {
+    // Render at export resolution into an offscreen canvas
+    const off  = document.createElement('canvas');
+    off.width  = px;
+    off.height = px;
+    const offCtx = off.getContext('2d');
+
+    // Save/restore DS references so we draw into off at the right size
+    const origW = srcCanvas.width, origH = srcCanvas.height;
+    srcCanvas.width  = px;
+    srcCanvas.height = px;
+    const origCtx = srcCanvas === velCanvas ? velCtx : presCtx;
+
+    if (name === 'velocity') drawVelocityField();
+    else                      drawPressureField();
+
+    // Copy to offscreen
+    offCtx.drawImage(srcCanvas, 0, 0, px, px);
+
+    // Restore source canvas
+    srcCanvas.width  = origW;
+    srcCanvas.height = origH;
+    if (name === 'velocity') drawVelocityField();
+    else                      drawPressureField();
+
+    // Download
+    const mime = fmt === 'jpg' ? 'image/jpeg' : 'image/png';
+    const ext  = fmt === 'jpg' ? 'jpg'        : 'png';
+    const qual = fmt === 'jpg' ? 0.92 : undefined;
+    const url  = off.toDataURL(mime, qual);
+    triggerDownload(url, `flowlab_${solver}_${tag}_${px}px_${stamp}.${ext}`);
+  }
+}
+
+// SVG export: re-renders the field as a grid of colored <rect> elements
+function exportSVG(field, px, solver, stamp) {
+  const cfg = currentData.config;
+  const nx  = cfg.nx, ny = cfg.ny;
+  const stats = activeStats();
+
+  const renderField = (tag, title, getColor) => {
+    const cw = (px / nx).toFixed(2), ch = (px / ny).toFixed(2);
+    let rects = '';
+    for (let i = 0; i < ny; i++) {
+      for (let j = 0; j < nx; j++) {
+        const x = (j / nx * px).toFixed(2);
+        const y = ((ny - 1 - i) / ny * px).toFixed(2);
+        rects += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" fill="${getColor(i,j)}"/>`;
+      }
+    }
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${px} ${px}">\n` +
+      `<title>${title} – ${solver} solver</title>\n` +
+      `<rect width="${px}" height="${px}" fill="${canvasBgFill()}"/>\n` +
+      rects + '\n</svg>';
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    triggerDownload(url, `flowlab_${solver}_${tag}_${px}px_${stamp}.svg`);
+  };
+
+  const gridLookup = (() => {
+    const g = Array.from({length: ny}, () => new Array(nx));
+    activeGrid().forEach(pt => { g[pt.i][pt.j] = pt; });
+    return g;
+  })();
+
+  if (field === 'velocity' || field === 'both') {
+    const maxMag = DS.velAuto ? (stats.max_velocity_magnitude || 1) : DS.velMax;
+    const minMag = DS.velAuto ? 0 : DS.velMin;
+    const range  = Math.max(maxMag - minMag, 1e-9);
+    renderField('vel', 'Velocity Magnitude', (i, j) => {
+      const pt = gridLookup[i]?.[j];
+      if (!pt) return '#000';
+      const t = Math.max(0, Math.min(1, (pt.magnitude - minMag) / range));
+      const [r,g,b] = jetColor(t);
+      return `rgb(${r},${g},${b})`;
+    });
+  }
+  if (field === 'pressure' || field === 'both') {
+    const minP  = DS.presAuto ? (stats.min_p ?? 0) : DS.presMin;
+    const maxP  = DS.presAuto ? (stats.max_p ?? 1) : DS.presMax;
+    const range = Math.max(maxP - minP, 1e-9);
+    renderField('pres', 'Pressure Field', (i, j) => {
+      const pt = gridLookup[i]?.[j];
+      if (!pt) return '#000';
+      const t = Math.max(0, Math.min(1, ((pt.p || 0) - minP) / range));
+      const [r,g,b] = pressureColor(t);
+      return `rgb(${r},${g},${b})`;
+    });
+  }
+}
+
+function triggerDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 // ── Fullscreen ────────────────────────────────────────────────────────────────
