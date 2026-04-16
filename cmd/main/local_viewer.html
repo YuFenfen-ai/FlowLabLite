@@ -325,12 +325,16 @@
     </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
-    <!-- Solver quick-switch (visible only for dual-solver JSON) -->
+    <!-- Solver quick-switch (visible only for multi-solver JSON) -->
     <div id="headerSolverSwitch" style="display:none;gap:4px;align-items:center;display:none">
       <button class="btn active" id="hBtnChorin" onclick="setActiveSolver('chorin')"
         style="padding:4px 10px;font-size:12px" title="Switch to Chorin solver view">Chorin</button>
       <button class="btn" id="hBtnSimple" onclick="setActiveSolver('simple')"
         style="padding:4px 10px;font-size:12px" title="Switch to SIMPLE solver view">SIMPLE</button>
+      <button class="btn" id="hBtnPcg" onclick="setActiveSolver('pcg')"
+        style="padding:4px 10px;font-size:12px" title="Switch to Chorin-PCG solver view">PCG</button>
+      <button class="btn" id="hBtnMac" onclick="setActiveSolver('mac')"
+        style="padding:4px 10px;font-size:12px" title="Switch to MAC staggered solver view">MAC</button>
     </div>
     <div class="status-pill" id="headerPill">
       <div class="dot idle" id="headerDot"></div>
@@ -350,12 +354,14 @@
 
   <div class="tsep"></div>
 
-  <!-- Solver selector (shown when dual-solver JSON loaded) -->
+  <!-- Solver selector (shown when multi-solver JSON loaded) -->
   <div id="solverBar" style="display:none;align-items:center;gap:6px">
     <span class="tlabel">Solver:</span>
     <div class="btn-group">
       <button class="btn active" id="btnChorin" onclick="setActiveSolver('chorin')">Chorin</button>
       <button class="btn" id="btnSimple" onclick="setActiveSolver('simple')">SIMPLE</button>
+      <button class="btn" id="btnPcg"    onclick="setActiveSolver('pcg')">PCG</button>
+      <button class="btn" id="btnMac"    onclick="setActiveSolver('mac')">MAC</button>
     </div>
   </div>
 
@@ -448,7 +454,7 @@
       <div style="font-size:28px;margin-bottom:8px;">📁</div>
       <strong>Drag &amp; drop results.json here</strong>, or click to browse<br>
       Generate with: <code>bash run_local.sh</code> →
-      produces <code>results.json</code> (Chorin + SIMPLE)
+      produces <code>results.json</code> (Chorin + SIMPLE + PCG + MAC)
     </div>
 
     <!-- 2-column canvas grid (hidden until data loaded) -->
@@ -640,7 +646,7 @@
       <div class="cp-body">
         <div class="prow"><span class="pk">Grid size</span>    <span class="pv hi" id="pGrid">—</span></div>
         <div class="prow"><span class="pk">Solver</span>       <span class="pv hi" id="pSolver">—</span></div>
-        <div class="prow"><span class="pk">Chorin steps</span> <span class="pv"    id="pSteps">—</span></div>
+        <div class="prow"><span class="pk" id="pStepsLbl">Steps</span>        <span class="pv"    id="pSteps">—</span></div>
         <div class="prow"><span class="pk">SIMPLE iters</span> <span class="pv"    id="pSiters">—</span></div>
         <div class="prow"><span class="pk">Reynolds Re</span>  <span class="pv hi" id="pRe">—</span></div>
         <div class="prow"><span class="pk">Density ρ</span>    <span class="pv"    id="pRho">—</span></div>
@@ -693,6 +699,10 @@
         <div class="prow"><span class="pk">Chorin run</span>  <span class="pv" id="tCR">—</span></div>
         <div class="prow"><span class="pk">SIMPLE init</span> <span class="pv" id="tSI">—</span></div>
         <div class="prow"><span class="pk">SIMPLE run</span>  <span class="pv" id="tSR">—</span></div>
+        <div class="prow"><span class="pk">PCG init</span>    <span class="pv" id="tPI">—</span></div>
+        <div class="prow"><span class="pk">PCG run</span>     <span class="pv" id="tPR">—</span></div>
+        <div class="prow"><span class="pk">MAC init</span>    <span class="pv" id="tMI">—</span></div>
+        <div class="prow"><span class="pk">MAC run</span>     <span class="pv" id="tMR">—</span></div>
         <div class="prow"><span class="pk">Total</span>       <span class="pv hi" id="tTot">—</span></div>
       </div>
     </div>
@@ -787,8 +797,8 @@
           <td style="padding:5px 0;line-height:1.5">Reference scale below the velocity map: arrow length is proportional to flow speed</td>
         </tr>
         <tr style="border-bottom:1px solid var(--c-border)">
-          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Chorin / SIMPLE</td>
-          <td style="padding:5px 0;line-height:1.5">Switch between the two solvers. SIMPLE button is disabled if the JSON contains only Chorin data</td>
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Chorin / SIMPLE / PCG / MAC</td>
+          <td style="padding:5px 0;line-height:1.5">Switch between solvers. Buttons are disabled if the JSON does not contain that solver's data. Regenerate with <code style="background:var(--c-surface2);padding:1px 3px;border-radius:2px">run_local.sh</code></td>
         </tr>
         <tr style="border-bottom:1px solid var(--c-border)">
           <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Playback</td>
@@ -807,9 +817,11 @@
           letter-spacing:0.07em;color:var(--c-muted)">Solver parameters (default)</h3>
       <div style="font-size:12px;font-family:monospace;color:var(--c-text);line-height:1.9;
            background:var(--c-surface2);border-radius:6px;padding:10px 14px">
-        Grid: 41 × 41 &nbsp;|&nbsp; Re = 20 &nbsp;|&nbsp; ρ = 1.0 &nbsp;|&nbsp; ν = 0.1<br>
+        Grid: 41 × 41 nodes (MAC: 40 × 40 cells) &nbsp;|&nbsp; Re = 20 &nbsp;|&nbsp; ρ = 1.0 &nbsp;|&nbsp; ν = 0.1<br>
         Chorin: dt = 0.001, nt = 500 steps, nit = 50 (Poisson iterations/step)<br>
         SIMPLE: α_p = 0.3, α_u = 0.7 (under-relaxation factors)<br>
+        PCG: Chorin projection with PCG pressure solve (Jacobi preconditioner)<br>
+        MAC: staggered Harlow-Welch grid, PCG pressure, ghost-cell BCs<br>
         Domain: 2 × 2, dx = dy = 0.05
       </div>
     </section>
@@ -870,29 +882,59 @@ const presCtx    = presCanvas.getContext('2d');
 function activeGrid()  {
   if (activeSolver === 'simple' && currentData?.simple_grid?.length)
     return currentData.simple_grid;
+  if (activeSolver === 'pcg' && currentData?.pcg_grid?.length)
+    return currentData.pcg_grid;
+  if (activeSolver === 'mac' && currentData?.mac_grid?.length)
+    return currentData.mac_grid;
   return currentData?.grid ?? [];
 }
 function activeStats() {
   if (activeSolver === 'simple' && currentData?.simple_statistics)
     return currentData.simple_statistics;
+  if (activeSolver === 'pcg' && currentData?.pcg_statistics)
+    return currentData.pcg_statistics;
+  if (activeSolver === 'mac' && currentData?.mac_statistics)
+    return currentData.mac_statistics;
   return currentData?.statistics ?? {};
+}
+// Grid dimensions depend on solver: MAC uses mac_nc×mac_nc cell-centres.
+function activeGridSize() {
+  if (activeSolver === 'mac') {
+    const nc = currentData?.config?.mac_nc ?? 40;
+    return { nx: nc, ny: nc };
+  }
+  return { nx: currentData?.config?.nx ?? 41, ny: currentData?.config?.ny ?? 41 };
 }
 
 // ── Solver toggle ─────────────────────────────────────────────────────────────
 window.setActiveSolver = function (s) {
   activeSolver = s;
   // toolbar buttons
-  document.getElementById('btnChorin').className = 'btn' + (s === 'chorin' ? ' active' : '');
-  document.getElementById('btnSimple').className = 'btn' + (s === 'simple' ? ' active' : '');
+  ['btnChorin','btnSimple','btnPcg','btnMac'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'btn' + (id === 'btn' + s.charAt(0).toUpperCase() + s.slice(1) ? ' active' : '');
+  });
   // header quick-switch buttons
-  document.getElementById('hBtnChorin').className = 'btn' + (s === 'chorin' ? ' active' : '');
-  document.getElementById('hBtnSimple').className = 'btn' + (s === 'simple' ? ' active' : '');
+  ['hBtnChorin','hBtnSimple','hBtnPcg','hBtnMac'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'btn' + (id === 'hBtn' + s.charAt(0).toUpperCase() + s.slice(1) ? ' active' : '');
+  });
   const isSimple = s === 'simple';
   document.getElementById('sResRow').style.display = isSimple ? '' : 'none';
-  const lbl = isSimple ? '(SIMPLE – steady)' : '(Chorin – transient)';
+  const lblMap = {
+    chorin: '(Chorin – transient)',
+    simple: '(SIMPLE – steady)',
+    pcg:    '(Chorin-PCG – transient)',
+    mac:    '(MAC staggered – transient)',
+  };
+  const lbl = lblMap[s] ?? '';
   document.getElementById('velActiveLbl').textContent  = lbl;
   document.getElementById('presActiveLbl').textContent = lbl;
-  document.getElementById('headerMsg').textContent = s === 'chorin' ? 'Chorin active' : 'SIMPLE active';
+  const msgMap = {
+    chorin: 'Chorin active', simple: 'SIMPLE active',
+    pcg: 'PCG active', mac: 'MAC active',
+  };
+  document.getElementById('headerMsg').textContent = msgMap[s] ?? s;
   if (currentData) { updateStats(); redrawAll(); }
 };
 
@@ -969,20 +1011,34 @@ function loadJSON(text) {
     currentData  = data;
     activeSolver = 'chorin';
 
-    // Dual-solver detection
-    const hasDual = Array.isArray(data.simple_grid) && data.simple_grid.length > 0;
-    document.getElementById('solverBar').style.display  = hasDual ? 'flex' : 'none';
-    document.getElementById('solverSep').style.display  = hasDual ? ''     : 'none';
-    // Header solver switch: always show when data loaded; disable SIMPLE for single-solver JSON
+    // Multi-solver detection
+    const hasSimple = Array.isArray(data.simple_grid) && data.simple_grid.length > 0;
+    const hasPcg    = Array.isArray(data.pcg_grid)    && data.pcg_grid.length    > 0;
+    const hasMac    = Array.isArray(data.mac_grid)    && data.mac_grid.length    > 0;
+    const hasMulti  = hasSimple || hasPcg || hasMac;
+    document.getElementById('solverBar').style.display  = hasMulti ? 'flex' : 'none';
+    document.getElementById('solverSep').style.display  = hasMulti ? ''     : 'none';
+    // Header solver switch: always show when data loaded
     document.getElementById('headerSolverSwitch').style.display = 'flex';
     document.getElementById('btnChorin').className  = 'btn active';
     document.getElementById('btnSimple').className  = 'btn';
+    document.getElementById('btnPcg').className     = 'btn';
+    document.getElementById('btnMac').className     = 'btn';
     document.getElementById('hBtnChorin').className = 'btn active';
     document.getElementById('hBtnSimple').className = 'btn';
-    document.getElementById('hBtnSimple').disabled  = !hasDual;
-    document.getElementById('hBtnSimple').title = hasDual
-      ? 'Switch to SIMPLE solver view'
-      : 'No SIMPLE data in this JSON — regenerate with run_local.sh';
+    document.getElementById('hBtnPcg').className    = 'btn';
+    document.getElementById('hBtnMac').className    = 'btn';
+
+    const solverBtns = [
+      ['hBtnSimple', hasSimple, 'SIMPLE', 'No SIMPLE data in this JSON'],
+      ['hBtnPcg',    hasPcg,    'PCG',    'No PCG data in this JSON'],
+      ['hBtnMac',    hasMac,    'MAC',    'No MAC data in this JSON'],
+    ];
+    solverBtns.forEach(([id, has, label, noMsg]) => {
+      const el = document.getElementById(id);
+      el.disabled = !has;
+      el.title = has ? `Switch to ${label} solver view` : noMsg + ' — regenerate with run_local.sh';
+    });
     document.getElementById('velActiveLbl').textContent  = '(Chorin – transient)';
     document.getElementById('presActiveLbl').textContent = '(Chorin – transient)';
     document.getElementById('sResRow').style.display = 'none';
@@ -992,11 +1048,15 @@ function loadJSON(text) {
     document.getElementById('secTiming').style.display = hasTiming ? '' : 'none';
     if (hasTiming) {
       const t = data.timing;
-      document.getElementById('tCI').textContent  = t.chorin_init_ms.toFixed(2) + ' ms';
-      document.getElementById('tCR').textContent  = t.chorin_run_ms.toFixed(2)  + ' ms';
-      document.getElementById('tSI').textContent  = t.simple_init_ms.toFixed(2) + ' ms';
-      document.getElementById('tSR').textContent  = t.simple_run_ms.toFixed(2)  + ' ms';
-      document.getElementById('tTot').textContent = t.total_ms.toFixed(2)       + ' ms';
+      document.getElementById('tCI').textContent  = t.chorin_init_ms.toFixed(2)  + ' ms';
+      document.getElementById('tCR').textContent  = t.chorin_run_ms.toFixed(2)   + ' ms';
+      document.getElementById('tSI').textContent  = t.simple_init_ms.toFixed(2)  + ' ms';
+      document.getElementById('tSR').textContent  = t.simple_run_ms.toFixed(2)   + ' ms';
+      document.getElementById('tPI').textContent  = t.pcg_init_ms != null ? t.pcg_init_ms.toFixed(2) + ' ms' : '—';
+      document.getElementById('tPR').textContent  = t.pcg_run_ms  != null ? t.pcg_run_ms.toFixed(2)  + ' ms' : '—';
+      document.getElementById('tMI').textContent  = t.mac_init_ms != null ? t.mac_init_ms.toFixed(2) + ' ms' : '—';
+      document.getElementById('tMR').textContent  = t.mac_run_ms  != null ? t.mac_run_ms.toFixed(2)  + ' ms' : '—';
+      document.getElementById('tTot').textContent = t.total_ms.toFixed(2)        + ' ms';
     }
 
     // Reset playback to fully-converged state
@@ -1029,9 +1089,13 @@ function loadJSON(text) {
     redrawAll();
 
     const pts = data.grid.length;
-    setStatus('ok', `Loaded ${pts} pts` + (hasDual ? ' (Chorin + SIMPLE)' : ''));
+    const solverLabels = ['Chorin'];
+    if (hasSimple) solverLabels.push('SIMPLE');
+    if (hasPcg)    solverLabels.push('PCG');
+    if (hasMac)    solverLabels.push('MAC');
+    setStatus('ok', `Loaded ${pts} pts (${solverLabels.join(' + ')})`);
     document.getElementById('headerDot').className = 'dot';
-    document.getElementById('headerMsg').textContent = hasDual ? 'Chorin + SIMPLE' : 'Chorin';
+    document.getElementById('headerMsg').textContent = solverLabels.join(' + ');
   } catch (err) {
     setStatus('err', 'Parse error: ' + err.message);
   }
@@ -1041,9 +1105,14 @@ function loadJSON(text) {
 function updateStats() {
   const c = currentData.config;
   const s = activeStats();
-  document.getElementById('pGrid').textContent   = c.nx + ' × ' + c.ny;
+  const { nx: gnx, ny: gny } = activeGridSize();
+  document.getElementById('pGrid').textContent   = gnx + ' × ' + gny + (activeSolver === 'mac' ? ' (cells)' : '');
   document.getElementById('pSolver').textContent = (c.solver || 'chorin').toUpperCase();
-  document.getElementById('pSteps').textContent  = c.nt   ?? '—';
+  // Show steps/iters relevant to the active solver
+  const stepsMap  = { chorin: c.nt, simple: c.simple_iters, pcg: c.pcg_steps, mac: c.mac_steps };
+  const stepsLbl  = { chorin: 'Chorin steps', simple: 'SIMPLE iters', pcg: 'PCG steps', mac: 'MAC steps' };
+  document.getElementById('pStepsLbl').textContent = stepsLbl[activeSolver] ?? 'Steps';
+  document.getElementById('pSteps').textContent    = stepsMap[activeSolver] ?? c.nt ?? '—';
   document.getElementById('pSiters').textContent = c.simple_iters ?? '—';
   document.getElementById('pRe').textContent     = (c.re ?? (c.rho * 2 / c.nu)).toFixed(1);
   document.getElementById('pRho').textContent    = c.rho.toFixed(3);
@@ -1074,7 +1143,7 @@ function updateStats() {
   document.getElementById('stV').textContent   = s.max_v?.toFixed(4)            ?? '—';
   document.getElementById('stMag').textContent = s.max_velocity_magnitude?.toFixed(4) ?? '—';
   document.getElementById('stDiv').textContent = s.divergence_norm?.toExponential(3)  ?? '—';
-  document.getElementById('stGrid').textContent = c.nx + '×' + c.ny;
+  document.getElementById('stGrid').textContent = gnx + '×' + gny;
 
   // Colorbar labels (auto)
   if (DS.velAuto) {
@@ -1167,7 +1236,7 @@ function labelColor() {
 function drawVelocityField() {
   if (!currentData) return;
   const cfg  = currentData.config;
-  const nx = cfg.nx, ny = cfg.ny;
+  const { nx, ny } = activeGridSize();
   const w = velCanvas.width, h = velCanvas.height;
   const stats  = activeStats();
   const maxMag = DS.velAuto
@@ -1246,7 +1315,7 @@ function drawVelocityField() {
 function drawPressureField() {
   if (!currentData) return;
   const cfg  = currentData.config;
-  const nx = cfg.nx, ny = cfg.ny;
+  const { nx, ny } = activeGridSize();
   const w = presCanvas.width, h = presCanvas.height;
   const stats  = activeStats();
   const autoMinP = stats.min_p ?? 0, autoMaxP = stats.max_p ?? 1;
@@ -1553,7 +1622,7 @@ function exportImage() {
 // SVG export: re-renders the field as a grid of colored <rect> elements
 function exportSVG(field, px, solver, stamp) {
   const cfg = currentData.config;
-  const nx  = cfg.nx, ny = cfg.ny;
+  const { nx, ny } = activeGridSize();
   const stats = activeStats();
 
   const renderField = (tag, title, getColor) => {
@@ -1640,8 +1709,7 @@ function divergingColor(t) {
 
 function drawComponentField(ctx, canvas, getVal, labelIds) {
   if (!currentData) return;
-  const cfg  = currentData.config;
-  const nx = cfg.nx, ny = cfg.ny;
+  const { nx, ny } = activeGridSize();
   const w = canvas.width, h = canvas.height;
   const playScale = DS.playT ?? 1;
 
@@ -1787,6 +1855,8 @@ function clearAll() {
   document.getElementById('secTiming').style.display       = 'none';
   document.getElementById('headerSolverSwitch').style.display = 'none';
   document.getElementById('hBtnSimple').disabled = false;
+  document.getElementById('hBtnPcg').disabled    = false;
+  document.getElementById('hBtnMac').disabled    = false;
   document.getElementById('headerDot').className = 'dot idle';
   document.getElementById('headerMsg').textContent = 'No data';
   [
