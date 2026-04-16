@@ -1075,6 +1075,632 @@ fn pressure_poisson_pcg(p : Array[Array[Double]], dx : Double, dy : Double,
   iter_done
 }
 
+// ── [Layer 2 ext] Additional PCG Preconditioners ──────────────────────────────
+//
+// Supplements the existing Jacobi (Diagonal) preconditioner with three
+// alternatives: DILU, DIC, and GAMG.  All are accessed via:
+//   pressure_poisson_pcg_prec(p, dx, dy, b, precond_type)
+// where precond_type: 0=Jacobi  1=DILU  2=DIC  3=GAMG
+//
+// The original pressure_poisson_pcg() is NOT modified.
+//
+// References:
+//   DILU/DIC : OpenFOAM-dev DILUPreconditioner.C, DICPreconditioner.C (GPL-3.0)
+//              https://github.com/OpenFOAM/OpenFOAM-dev
+//   GAMG     : Briggs, Henson & McCormick (2000). A Multigrid Tutorial. SIAM.
+//              Trottenberg, Oosterlee & Schüller (2001). Multigrid. Academic Press.
+//   IC(0)    : Meijerink & van der Vorst (1977). Math. Comp. 31(137).
+//              Kershaw (1978). J. Comput. Phys. 26(1).
+//
+// See docs/preconditioner_theory.md for full mathematical derivations.
+
+// ── A.1  Modified diagonal (shared setup for both DILU and DIC) ───────────────
+//
+// Computes the IC(0) modified diagonal for the 5-point Laplacian:
+//   d[i][j] = a_diag − (inv_dx2)²/d[i][j−1] − (inv_dy2)²/d[i−1][j]
+//
+// Corresponds to the L·D·L^T factorisation of M = −A (the SPD form).
+// Row-major ordering: west (j−1) and south (i−1) neighbours precede (i,j).
+// Safety guard: if d drops to ≤ 1e-15, fall back to a_diag (Jacobi level).
+fn build_modified_diag(
+  inv_dx2 : Double,
+  inv_dy2 : Double,
+  a_diag  : Double,
+) -> Array[Array[Double]] {
+  let d = create_zeros_2d(ny, nx)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let west  = if j > 1 { inv_dx2 * inv_dx2 / d[i][j - 1] } else { 0.0 }
+      let south = if i > 1 { inv_dy2 * inv_dy2 / d[i - 1][j] } else { 0.0 }
+      let dval  = a_diag - west - south
+      d[i][j] = if dval > 1.0e-15 { dval } else { a_diag }
+    }
+  }
+  d
+}
+
+// ── A.2  DILU preconditioner – apply step ─────────────────────────────────────
+//
+// M_DILU⁻¹ r = z :   z[i][j] = r[i][j] * d_inv[i][j]
+// (Diagonal scaling with modified diagonal; no triangular sweeps.)
+fn apply_dilu_precond(
+  r     : Array[Array[Double]],
+  z     : Array[Array[Double]],
+  d_inv : Array[Array[Double]],
+) -> Unit {
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      z[i][j] = r[i][j] * d_inv[i][j]
+    }
+  }
+}
+
+// ── A.3  DIC preconditioner – apply step ──────────────────────────────────────
+//
+// Applies M_DIC⁻¹ r = z via L·D·L^T  (IC(0) Incomplete Cholesky):
+//
+// Step 1 – Forward sweep  L·w = r  (row-major order, (1,1)→(ny-2,nx-2)):
+//   w[i][j] = r[i][j] + (inv_dx2/d[i][j-1])·w[i][j-1]
+//                      + (inv_dy2/d[i-1][j])·w[i-1][j]
+//
+// Step 2 – Diagonal scale  D·y = w:
+//   y[i][j] = w[i][j] / d[i][j]          (result stored in z)
+//
+// Step 3 – Backward sweep  L^T·z = y  (reverse row-major, (ny-2,nx-2)→(1,1)):
+//   z[i][j] = y[i][j] + (inv_dx2/d[i][j])·z[i][j+1]
+//                      + (inv_dy2/d[i][j])·z[i+1][j]
+//
+// Reverse order is achieved with auxiliary counters ri,ci to avoid
+// reliance on decrement-step for-loops.
+fn apply_dic_precond(
+  r       : Array[Array[Double]],
+  z       : Array[Array[Double]],
+  d       : Array[Array[Double]],
+  inv_dx2 : Double,
+  inv_dy2 : Double,
+) -> Unit {
+  let w = create_zeros_2d(ny, nx)
+
+  // Step 1: Forward sweep  L · w = r
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let west  = if j > 1 { inv_dx2 / d[i][j - 1] * w[i][j - 1] } else { 0.0 }
+      let south = if i > 1 { inv_dy2 / d[i - 1][j] * w[i - 1][j] } else { 0.0 }
+      w[i][j] = r[i][j] + west + south
+    }
+  }
+
+  // Step 2: Diagonal scale  D · y = w  (write into z for reuse)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      z[i][j] = w[i][j] / d[i][j]
+    }
+  }
+
+  // Step 3: Backward sweep  L^T · z = y  (reverse row-major via auxiliary index)
+  for ri = 0; ri < ny - 2; ri = ri + 1 {
+    let i = ny - 2 - ri
+    for ci = 0; ci < nx - 2; ci = ci + 1 {
+      let j     = nx - 2 - ci
+      let east  = if j < nx - 2 { inv_dx2 / d[i][j] * z[i][j + 1] } else { 0.0 }
+      let north = if i < ny - 2 { inv_dy2 / d[i][j] * z[i + 1][j] } else { 0.0 }
+      z[i][j] = z[i][j] + east + north
+    }
+  }
+}
+
+// ── A.4  GAMG (Geometric-Algebraic Multigrid) preconditioner ──────────────────
+//
+// 2-level V-cycle used as a PCG preconditioner.
+// Fine:   41×41 nodes (interior 39×39)
+// Coarse: 21×21 nodes (interior 19×19, every-other-point coarsening)
+//
+// V-cycle outline:
+//   1. Pre-smooth   (ν₁=2 damped Jacobi, ω=2/3)
+//   2. Fine residual  res_f = r − A·z
+//   3. Restrict      r_c = R · res_f          (injection)
+//   4. Coarse solve  A_c · e_c = r_c          (20 Jacobi steps)
+//   5. Prolongate    z ← z + P · e_c          (bilinear)
+//   6. Post-smooth   (ν₂=2 damped Jacobi)
+
+/// Coarse grid node count (both dimensions) for the GAMG V-cycle.
+let gamg_nc : Int = (nx + 1) / 2   // = 21 for nx = 41
+
+// Apply cavity pressure BCs on an arbitrary n×n grid.
+// Same BC types as the fine grid: Neumann left/right/bottom, Dirichlet top (p=0).
+fn apply_pressure_bcs_n(p : Array[Array[Double]], n : Int) -> Unit {
+  for i = 0; i < n; i = i + 1 {
+    p[i][0]     = p[i][1]       // left  Neumann
+    p[i][n - 1] = p[i][n - 2]  // right Neumann
+  }
+  for j = 0; j < n; j = j + 1 {
+    p[0][j]     = p[1][j]       // bottom Neumann
+    p[n - 1][j] = 0.0           // top lid Dirichlet p = 0
+  }
+}
+
+// Full-weighting restriction (normalised).  Raw P^T weights for an interior
+// coarse node sum to 4 (1 + 4×½ + 4×¼), so we divide by 4 to produce a
+// weighted average.  Without normalisation the coarse operator over-amplifies
+// smooth modes by 4×, causing alpha ≈ −¼ and stalled PCG convergence.
+// Boundary terms (fine nodes outside grid) are silently omitted.
+fn gamg_restrict(
+  r_fine   : Array[Array[Double]],
+  r_coarse : Array[Array[Double]],
+) -> Unit {
+  for ci = 0; ci < gamg_nc; ci = ci + 1 {
+    for cj = 0; cj < gamg_nc; cj = cj + 1 {
+      let fi   = 2 * ci
+      let fj   = 2 * cj
+      let ctr  = r_fine[fi][fj]
+      let w    = if fj > 0      { r_fine[fi][fj - 1] * 0.5 } else { 0.0 }
+      let e    = if fj < nx - 1 { r_fine[fi][fj + 1] * 0.5 } else { 0.0 }
+      let s    = if fi > 0      { r_fine[fi - 1][fj] * 0.5 } else { 0.0 }
+      let n    = if fi < ny - 1 { r_fine[fi + 1][fj] * 0.5 } else { 0.0 }
+      let sw_v = if fi > 0      && fj > 0      { r_fine[fi - 1][fj - 1] * 0.25 } else { 0.0 }
+      let se_v = if fi > 0      && fj < nx - 1 { r_fine[fi - 1][fj + 1] * 0.25 } else { 0.0 }
+      let nw_v = if fi < ny - 1 && fj > 0      { r_fine[fi + 1][fj - 1] * 0.25 } else { 0.0 }
+      let ne_v = if fi < ny - 1 && fj < nx - 1 { r_fine[fi + 1][fj + 1] * 0.25 } else { 0.0 }
+      // Normalise by 4 (interior weight sum) so R is a weighted average.
+      // Without this factor the coarse correction over-amplifies smooth modes
+      // by 4×, making alpha ≈ −¼ instead of −1 and stalling PCG.
+      r_coarse[ci][cj] = (ctr + w + e + s + n + sw_v + se_v + nw_v + ne_v) / 4.0
+    }
+  }
+}
+
+// Bilinear prolongation: e_coarse (21×21) → e_fine (41×41).
+// Four node-type cases (see docs/preconditioner_theory.md §6.5).
+fn gamg_prolongate(
+  e_coarse : Array[Array[Double]],
+  e_fine   : Array[Array[Double]],
+) -> Unit {
+  let nc = gamg_nc
+  // Zero fine grid
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      e_fine[i][j] = 0.0
+    }
+  }
+  // Case 1: coarse-coincident (even i, even j)
+  for ci = 0; ci < nc; ci = ci + 1 {
+    for cj = 0; cj < nc; cj = cj + 1 {
+      e_fine[2 * ci][2 * cj] = e_coarse[ci][cj]
+    }
+  }
+  // Case 2: horizontal midpoint (even i, odd j)
+  for ci = 0; ci < nc; ci = ci + 1 {
+    for cj = 0; cj < nc - 1; cj = cj + 1 {
+      e_fine[2 * ci][2 * cj + 1] = (e_coarse[ci][cj] + e_coarse[ci][cj + 1]) * 0.5
+    }
+  }
+  // Case 3: vertical midpoint (odd i, even j)
+  for ci = 0; ci < nc - 1; ci = ci + 1 {
+    for cj = 0; cj < nc; cj = cj + 1 {
+      e_fine[2 * ci + 1][2 * cj] = (e_coarse[ci][cj] + e_coarse[ci + 1][cj]) * 0.5
+    }
+  }
+  // Case 4: cell centre (odd i, odd j)
+  for ci = 0; ci < nc - 1; ci = ci + 1 {
+    for cj = 0; cj < nc - 1; cj = cj + 1 {
+      let avg = (e_coarse[ci][cj] + e_coarse[ci][cj + 1] +
+                 e_coarse[ci + 1][cj] + e_coarse[ci + 1][cj + 1]) * 0.25
+      e_fine[2 * ci + 1][2 * cj + 1] = avg
+    }
+  }
+}
+
+// Damped Jacobi smoother on the fine grid for the SPD system B·z = r (B = −A):
+//   z ← z + (ω / a_diag) · (r + A·z),   ω = 2/3
+//
+// Sign convention: the discrete Laplacian A is SND.  The V-cycle works with
+// the SPD form B = −A throughout.  The Jacobi update for B·z = r is:
+//   z ← z + ω·diag(B)⁻¹·(r − B·z)
+//         = z + ω/a_diag · (r − (−A)·z)
+//         = z + ω/a_diag · (r + A·z)       ← note the PLUS sign
+// Spectral radius: max |1 − ω·μ_B/a_diag| = max(1−ω, 1) = 1  (no divergence).
+// High-frequency components (μ_B ≈ a_diag) decay by factor (1−ω) = 1/3.
+fn gamg_smooth_fine(
+  z       : Array[Array[Double]],
+  r       : Array[Array[Double]],
+  inv_dx2 : Double,
+  inv_dy2 : Double,
+  a_diag  : Double,
+  nu      : Int,
+) -> Unit {
+  let damp = 2.0 / (3.0 * a_diag)
+  let az   = create_zeros_2d(ny, nx)
+  for s = 0; s < nu; s = s + 1 {
+    apply_pressure_bcs(z)
+    laplacian_apply(z, az, inv_dx2, inv_dy2, a_diag)
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        z[i][j] = z[i][j] + damp * (r[i][j] + az[i][j])
+      }
+    }
+  }
+}
+
+// Coarse-grid CG solve for the SPD system  B_c · e_c = r_c  (B_c = −A_c).
+// Damped Jacobi (ω=2/3) has spectral radius 1 on smooth modes — it cannot
+// reduce the low-frequency error that the V-cycle needs the coarse grid to
+// handle.  CG converges in O(√κ_c) ≈ 15-20 steps on this 21×21 grid.
+//
+// Start from e_c = 0 (caller must zero e_c before the call).
+fn gamg_coarse_cg(
+  e_c       : Array[Array[Double]],
+  r_c       : Array[Array[Double]],
+  inv_dx2_c : Double,
+  inv_dy2_c : Double,
+  a_diag_c  : Double,
+) -> Unit {
+  let nc  = gamg_nc
+  let res = create_zeros_2d(nc, nc)
+  let d_c = create_zeros_2d(nc, nc)
+  let q   = create_zeros_2d(nc, nc)
+
+  // Initial residual = r_c (e_c = 0); d_0 = res_0
+  let mut b_sq = 0.0
+  for i = 1; i < nc - 1; i = i + 1 {
+    for j = 1; j < nc - 1; j = j + 1 {
+      let rv = r_c[i][j]
+      res[i][j] = rv
+      d_c[i][j] = rv
+      b_sq = b_sq + rv * rv
+    }
+  }
+  let b_norm = b_sq.sqrt()
+  if b_norm < 1.0e-15 { return }
+
+  let mut rho = b_sq   // unpreconditioned: rho = res^T · res
+
+  // CG on SPD B_c · e_c = r_c; at most nc*nc iterations (exact in exact arith)
+  for iter = 0; iter < nc * nc; iter = iter + 1 {
+    // q = B_c · d_c = −A_c · d_c
+    apply_pressure_bcs_n(d_c, nc)
+    for i = 1; i < nc - 1; i = i + 1 {
+      for j = 1; j < nc - 1; j = j + 1 {
+        let hx = (d_c[i][j + 1] + d_c[i][j - 1]) * inv_dx2_c
+        let hy = (d_c[i + 1][j] + d_c[i - 1][j]) * inv_dy2_c
+        let az = hx + hy - d_c[i][j] * a_diag_c
+        q[i][j] = -az   // B_c · d = −A_c · d
+      }
+    }
+
+    // alpha = rho / (d^T q)   — positive because B_c is SPD
+    let mut dBd = 0.0
+    for i = 1; i < nc - 1; i = i + 1 {
+      for j = 1; j < nc - 1; j = j + 1 {
+        dBd = dBd + d_c[i][j] * q[i][j]
+      }
+    }
+    if dBd.abs() < 1.0e-30 { break }
+    let alpha = rho / dBd
+
+    // e_c += alpha·d;  res -= alpha·q
+    let mut r_sq = 0.0
+    for i = 1; i < nc - 1; i = i + 1 {
+      for j = 1; j < nc - 1; j = j + 1 {
+        e_c[i][j] = e_c[i][j] + alpha * d_c[i][j]
+        let r_new = res[i][j] - alpha * q[i][j]
+        res[i][j] = r_new
+        r_sq = r_sq + r_new * r_new
+      }
+    }
+    if r_sq.sqrt() < pcg_tol * b_norm { break }
+
+    let rho_new = r_sq
+    if rho.abs() < 1.0e-30 { break }
+    let beta = rho_new / rho
+    rho = rho_new
+
+    // d = res + beta·d
+    for i = 1; i < nc - 1; i = i + 1 {
+      for j = 1; j < nc - 1; j = j + 1 {
+        d_c[i][j] = res[i][j] + beta * d_c[i][j]
+      }
+    }
+  }
+  apply_pressure_bcs_n(e_c, nc)
+}
+
+// GAMG V-cycle: given fine-grid residual r, compute correction z ≈ A⁻¹ r.
+fn apply_gamg_precond(
+  r       : Array[Array[Double]],
+  z       : Array[Array[Double]],
+  inv_dx2 : Double,
+  inv_dy2 : Double,
+  a_diag  : Double,
+) -> Unit {
+  let nc        = gamg_nc
+  let inv_dx2_c = inv_dx2 / 4.0   // coarse spacing: dx_c = 2·dx
+  let inv_dy2_c = inv_dy2 / 4.0
+  let a_diag_c  = 2.0 * inv_dx2_c + 2.0 * inv_dy2_c
+
+  let res_f = create_zeros_2d(ny, nx)
+  let r_c   = create_zeros_2d(nc, nc)
+  let e_c   = create_zeros_2d(nc, nc)
+  let pe    = create_zeros_2d(ny, nx)
+  let tmp   = create_zeros_2d(ny, nx)
+
+  // Initialise z = 0 at interior nodes
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      z[i][j] = 0.0
+    }
+  }
+
+  // 1. Pre-smooth  (ν₁ = 2 steps)
+  gamg_smooth_fine(z, r, inv_dx2, inv_dy2, a_diag, 2)
+
+  // 2. Fine residual: res_f = r − B·z1 = r + A·z1  (B = −A is SPD)
+  apply_pressure_bcs(z)
+  laplacian_apply(z, tmp, inv_dx2, inv_dy2, a_diag)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      res_f[i][j] = r[i][j] + tmp[i][j]
+    }
+  }
+
+  // 3. Restrict  r_c = R · res_f  (injection)
+  gamg_restrict(res_f, r_c)
+
+  // 4. Coarse CG solve: B_c · e_c = r_c  (start from e_c = 0)
+  gamg_coarse_cg(e_c, r_c, inv_dx2_c, inv_dy2_c, a_diag_c)
+
+  // 5. Prolongate and add coarse correction
+  gamg_prolongate(e_c, pe)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      z[i][j] = z[i][j] + pe[i][j]
+    }
+  }
+
+  // 6. Post-smooth  (ν₂ = 2 steps)
+  gamg_smooth_fine(z, r, inv_dx2, inv_dy2, a_diag, 2)
+}
+
+// ── A.5  Generic PCG with selectable preconditioner ───────────────────────────
+//
+// precond_type:  0 = Jacobi (equivalent to pressure_poisson_pcg)
+//                1 = DILU   (modified-diagonal scaling)
+//                2 = DIC    (IC(0) with forward/backward sweeps)
+//                3 = GAMG   (2-level V-cycle)
+//
+// Returns the number of PCG iterations performed (≤ pcg_max_iter).
+// The original pressure_poisson_pcg() is NOT called here; this is a parallel
+// implementation so the existing function remains byte-for-byte unchanged.
+fn pressure_poisson_pcg_prec(
+  p            : Array[Array[Double]],
+  dx_          : Double,
+  dy_          : Double,
+  b            : Array[Array[Double]],
+  precond_type : Int,
+) -> Int {
+  let inv_dx2 = 1.0 / (dx_ * dx_)
+  let inv_dy2 = 1.0 / (dy_ * dy_)
+  let a_diag  = 2.0 * inv_dx2 + 2.0 * inv_dy2
+  let inv_m   = 1.0 / a_diag   // Jacobi scalar and GAMG smoothing denom
+
+  // Build modified diagonal for DILU (type 1) and DIC (type 2).
+  // For Jacobi and GAMG, allocate a dummy zero array (never accessed).
+  let d_mod = if precond_type == 1 || precond_type == 2 {
+    build_modified_diag(inv_dx2, inv_dy2, a_diag)
+  } else {
+    create_zeros_2d(ny, nx)
+  }
+
+  // Precompute element-wise inverse for DILU (avoid repeated division).
+  let d_inv = create_zeros_2d(ny, nx)
+  if precond_type == 1 {
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        let dv    = d_mod[i][j]
+        d_inv[i][j] = if dv > 1.0e-15 { 1.0 / dv } else { inv_m }
+      }
+    }
+  }
+
+  let r  = create_zeros_2d(ny, nx)
+  let d  = create_zeros_2d(ny, nx)
+  let ad = create_zeros_2d(ny, nx)
+  let z  = create_zeros_2d(ny, nx)
+
+  // r₀ = b − A·p₀
+  apply_pressure_bcs(p)
+  laplacian_apply(p, ad, inv_dx2, inv_dy2, a_diag)
+  let mut b_sq = 0.0
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      r[i][j] = b[i][j] - ad[i][j]
+      b_sq    = b_sq + b[i][j] * b[i][j]
+    }
+  }
+  let b_norm = b_sq.sqrt()
+  if b_norm < 1.0e-15 {
+    apply_pressure_bcs(p)
+    return 0
+  }
+
+  // z₀ = M⁻¹ r₀
+  if precond_type == 1 {
+    apply_dilu_precond(r, z, d_inv)
+  } else if precond_type == 2 {
+    apply_dic_precond(r, z, d_mod, inv_dx2, inv_dy2)
+  } else if precond_type == 3 {
+    apply_gamg_precond(r, z, inv_dx2, inv_dy2, a_diag)
+  } else {
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        z[i][j] = r[i][j] * inv_m
+      }
+    }
+  }
+
+  // d₀ = z₀;  ρ₀ = r₀ᵀ z₀
+  let mut rho = 0.0
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      d[i][j] = z[i][j]
+      rho     = rho + r[i][j] * z[i][j]
+    }
+  }
+
+  let mut iter_done = 0
+  for iter = 0; iter < pcg_max_iter; iter = iter + 1 {
+    // q = A · dₖ
+    apply_pressure_bcs(d)
+    laplacian_apply(d, ad, inv_dx2, inv_dy2, a_diag)
+
+    // αₖ = ρₖ / (dₖᵀ q)
+    let mut dAd = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        dAd = dAd + d[i][j] * ad[i][j]
+      }
+    }
+    if dAd.abs() < 1.0e-15 { break }
+    let alpha = rho / dAd
+
+    // p ← p + α·d;   r ← r − α·q;   accumulate ‖r‖²
+    let mut r_sq = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        p[i][j]   = p[i][j] + alpha * d[i][j]
+        let r_new = r[i][j] - alpha * ad[i][j]
+        r[i][j]   = r_new
+        r_sq      = r_sq + r_new * r_new
+      }
+    }
+    iter_done = iter + 1
+    if r_sq.sqrt() < pcg_tol * b_norm { break }
+
+    // z_{k+1} = M⁻¹ r_{k+1}
+    if precond_type == 1 {
+      apply_dilu_precond(r, z, d_inv)
+    } else if precond_type == 2 {
+      apply_dic_precond(r, z, d_mod, inv_dx2, inv_dy2)
+    } else if precond_type == 3 {
+      apply_gamg_precond(r, z, inv_dx2, inv_dy2, a_diag)
+    } else {
+      for i = 1; i < ny - 1; i = i + 1 {
+        for j = 1; j < nx - 1; j = j + 1 {
+          z[i][j] = r[i][j] * inv_m
+        }
+      }
+    }
+
+    // ρ_{k+1} = r_{k+1}ᵀ z_{k+1}
+    let mut rho_new = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        rho_new = rho_new + r[i][j] * z[i][j]
+      }
+    }
+    if rho.abs() < 1.0e-15 { break }
+    let beta = rho_new / rho
+    rho = rho_new
+
+    // d_{k+1} = z_{k+1} + β·dₖ
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        d[i][j] = z[i][j] + beta * d[i][j]
+      }
+    }
+  }
+
+  apply_pressure_bcs(p)
+  iter_done
+}
+
+// ── A.6  Named wrappers for each preconditioner ────────────────────────────────
+
+/// PCG pressure solve with DILU (modified-diagonal) preconditioner.
+fn pressure_poisson_pcg_dilu(
+  p   : Array[Array[Double]],
+  dx_ : Double,
+  dy_ : Double,
+  b   : Array[Array[Double]],
+) -> Int {
+  pressure_poisson_pcg_prec(p, dx_, dy_, b, 1)
+}
+
+/// PCG pressure solve with DIC (IC(0) Incomplete Cholesky) preconditioner.
+fn pressure_poisson_pcg_dic(
+  p   : Array[Array[Double]],
+  dx_ : Double,
+  dy_ : Double,
+  b   : Array[Array[Double]],
+) -> Int {
+  pressure_poisson_pcg_prec(p, dx_, dy_, b, 2)
+}
+
+/// Stationary V-cycle iteration for the pressure Poisson system ∇²p = b.
+/// Each step: r = b − A·p,  z = V-cycle(r),  p -= z.
+///
+/// Sign analysis: the V-cycle solves B·z = r where B = −A (SPD), so
+/// z ≈ (−A)^{−1}·r = −A^{−1}·r.  The corrected Richardson iteration is:
+///   p_{k+1} = p_k − T·r_k   (T = (−A)^{−1})
+/// Error propagation: e_{k+1} = (I + T·A)·e_k → 0 for exact T.  Note the
+/// MINUS sign: p += z would give spectral radius 2 (diverges).
+///
+/// Uses stationary form instead of PCG because the convergence-based coarse
+/// CG inside apply_gamg_precond is non-linear and would break PCG
+/// orthogonality. The stationary form converges with any consistent T.
+/// Returns the number of V-cycle applications (0 if b ≡ 0).
+fn pressure_poisson_pcg_gamg(
+  p   : Array[Array[Double]],
+  dx_ : Double,
+  dy_ : Double,
+  b   : Array[Array[Double]],
+) -> Int {
+  let inv_dx2 = 1.0 / (dx_ * dx_)
+  let inv_dy2 = 1.0 / (dy_ * dy_)
+  let a_diag  = 2.0 * inv_dx2 + 2.0 * inv_dy2
+  // Early-exit for trivial RHS (avoids divide-by-zero in convergence check)
+  let mut b_sq = 0.0
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      b_sq = b_sq + b[i][j] * b[i][j]
+    }
+  }
+  let b_norm = b_sq.sqrt()
+  if b_norm < 1.0e-15 {
+    apply_pressure_bcs(p)
+    return 0
+  }
+  let r  = create_zeros_2d(ny, nx)
+  let z  = create_zeros_2d(ny, nx)
+  let ap = create_zeros_2d(ny, nx)
+  let mut iter_done = 0
+  for iter = 0; iter < pcg_max_iter; iter = iter + 1 {
+    // r = b − A·p
+    apply_pressure_bcs(p)
+    laplacian_apply(p, ap, inv_dx2, inv_dy2, a_diag)
+    let mut r_sq = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        r[i][j] = b[i][j] - ap[i][j]
+        r_sq    = r_sq + r[i][j] * r[i][j]
+      }
+    }
+    iter_done = iter + 1
+    if r_sq.sqrt() < pcg_tol * b_norm { break }
+    // z = V-cycle(r):  z ≈ (−A)^{−1} r  (V-cycle solves B·z = r, B = −A SPD)
+    // Correct update: p -= z  (subtract, not add)
+    // Proof: e_{k+1} = (I + T·A)·e_k with T = (−A)^{−1} gives I − I = 0 ✓
+    apply_gamg_precond(r, z, inv_dx2, inv_dy2, a_diag)
+    // p -= z  (stationary Richardson: p_{k+1} = p_k − T·(b−A·p_k))
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        p[i][j] = p[i][j] - z[i][j]
+      }
+    }
+  }
+  apply_pressure_bcs(p)
+  iter_done
+}
+
 // ── [Layer 1] Chorin projection method using PCG for the pressure solve ───────
 //
 // Identical algorithm to cavity_flow_array (Chorin 1968) but the inner pressure
