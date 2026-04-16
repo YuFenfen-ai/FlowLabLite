@@ -513,3 +513,135 @@ test "pcg_vortex_formation" {
   let div_norm = get_pcg_divergence_norm()
   assert_true(div_norm < 0.05)
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Tests 35–42: Staggered MAC solver
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Test 35: init_mac resets all MAC arrays to zero ──────────────────────────
+test "mac_init_resets_state" {
+  // Dirty state first
+  run_mac_n_steps(1)
+  // Now reset
+  init_mac()
+  assert_eq(get_mac_step_count(), 0)
+  assert_eq(get_mac_last_iters(), 0)
+  // All fields zero after init
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      assert_true(approx_eq(get_u_mac_at(i, j), 0.0, 1.0e-15))
+      assert_true(approx_eq(get_v_mac_at(i, j), 0.0, 1.0e-15))
+      assert_true(approx_eq(get_p_mac_at(i, j), 0.0, 1.0e-15))
+    }
+  }
+}
+
+// ── Test 36: MAC pressure BCs satisfied after pressure solve ─────────────────
+test "mac_pressure_bcs_after_solve" {
+  init_mac()
+  run_mac_n_steps(1)
+  // Left Neumann: p[i][0] == p[i][1]
+  for i = 1; i < mac_nc - 1; i = i + 1 {
+    assert_true(approx_eq(get_p_mac_at(i, 0), get_p_mac_at(i, 1), 1.0e-10))
+  }
+  // Right Neumann: p[i][mac_nc-1] == p[i][mac_nc-2]
+  for i = 1; i < mac_nc - 1; i = i + 1 {
+    assert_true(approx_eq(get_p_mac_at(i, mac_nc - 1), get_p_mac_at(i, mac_nc - 2), 1.0e-10))
+  }
+  // Bottom Neumann: p[0][j] == p[1][j]
+  for j = 0; j < mac_nc; j = j + 1 {
+    assert_true(approx_eq(get_p_mac_at(0, j), get_p_mac_at(1, j), 1.0e-10))
+  }
+  // Top Dirichlet: p[mac_nc-1][j] == 0
+  for j = 0; j < mac_nc; j = j + 1 {
+    assert_true(approx_eq(get_p_mac_at(mac_nc - 1, j), 0.0, 1.0e-10))
+  }
+}
+
+// ── Test 37: MAC enforces wall no-slip BCs after one step ────────────────────
+test "mac_wall_bcs" {
+  init_mac()
+  run_mac_n_steps(1)
+  // Left wall u-faces: g_u_mac[i][0] = 0
+  for i = 0; i < mac_nc; i = i + 1 {
+    assert_true(approx_eq(g_u_mac[i][0], 0.0, 1.0e-12))
+  }
+  // Right wall u-faces: g_u_mac[i][mac_nc] = 0
+  for i = 0; i < mac_nc; i = i + 1 {
+    assert_true(approx_eq(g_u_mac[i][mac_nc], 0.0, 1.0e-12))
+  }
+  // Bottom wall v-faces: g_v_mac[0][j] = 0
+  for j = 0; j < mac_nc; j = j + 1 {
+    assert_true(approx_eq(g_v_mac[0][j], 0.0, 1.0e-12))
+  }
+  // Top wall v-faces: g_v_mac[mac_nc][j] = 0
+  for j = 0; j < mac_nc; j = j + 1 {
+    assert_true(approx_eq(g_v_mac[mac_nc][j], 0.0, 1.0e-12))
+  }
+}
+
+// ── Test 38: MAC step counter increments correctly ───────────────────────────
+test "mac_step_counter" {
+  init_mac()
+  assert_eq(get_mac_step_count(), 0)
+  run_mac_n_steps(5)
+  assert_eq(get_mac_step_count(), 5)
+  run_mac_n_steps(3)
+  assert_eq(get_mac_step_count(), 8)
+}
+
+// ── Test 39: MAC solver does not corrupt other solver states ─────────────────
+test "mac_state_isolation" {
+  // Prime Chorin and SIMPLE with known values
+  init_simulation()
+  run_n_steps(10)
+  let u_gs  = get_u_at(ny / 2, nx / 2)
+  let p_gs  = get_p_at(ny / 2, nx / 2)
+  init_simple()
+  run_simple_n_iter(20)
+  let u_si  = get_u_simple_at(ny / 2, nx / 2)
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(10)
+  let u_pcg = get_u_pcg_at(ny / 2, nx / 2)
+  // Run MAC
+  init_mac()
+  run_mac_n_steps(50)
+  // Chorin, SIMPLE, PCG states must be unchanged
+  assert_true(approx_eq(get_u_at(ny / 2, nx / 2),     u_gs,  1.0e-12))
+  assert_true(approx_eq(get_p_at(ny / 2, nx / 2),     p_gs,  1.0e-12))
+  assert_true(approx_eq(get_u_simple_at(ny / 2, nx / 2), u_si,  1.0e-12))
+  assert_true(approx_eq(get_u_pcg_at(ny / 2, nx / 2), u_pcg, 1.0e-12))
+}
+
+// ── Test 40: MAC PCG iteration count is bounded ──────────────────────────────
+test "mac_iter_count_bounded" {
+  init_mac()
+  run_mac_n_steps(50)
+  let iters = get_mac_last_iters()
+  assert_true(iters >= 0)
+  assert_true(iters <= pcg_max_iter)
+}
+
+// ── Test 41: MAC divergence is near-machine-zero after correction ─────────────
+// By construction ∇·u = 0 exactly in the staggered correction step.
+// Numeric residuals from PCG pressure solve may leave a small remainder;
+// we accept anything below 1e-4.
+test "mac_divergence_near_zero" {
+  init_mac()
+  run_mac_n_steps(50)
+  let div_norm = get_mac_divergence_norm()
+  assert_true(div_norm < 1.0e-4)
+}
+
+// ── Test 42: MAC produces a centre vortex after sufficient steps ─────────────
+test "mac_vortex_formation" {
+  init_mac()
+  run_mac_n_steps(200)
+  // At the geometric centre of the 40×40 MAC grid, the recirculating vortex
+  // drives fluid leftward (u < 0) just as in the collocated solvers.
+  let u_ctr = get_u_mac_at(mac_nc / 2, mac_nc / 2)
+  assert_true(u_ctr < 0.0)
+  // Divergence must remain small
+  let div_norm = get_mac_divergence_norm()
+  assert_true(div_norm < 1.0e-4)
+}

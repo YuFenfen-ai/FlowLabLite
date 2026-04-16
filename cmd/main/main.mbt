@@ -644,12 +644,15 @@ fn output_json(
   n_s : Int, res_s : Double,
   u_pcg : Array[Array[Double]], v_pcg : Array[Array[Double]], p_pcg : Array[Array[Double]],
   nt_pcg : Int,
+  nt_mac : Int,
   ci_ms : Double, cr_ms : Double,
   si_ms : Double, sr_ms : Double,
   pi_ms : Double, pr_ms : Double,
+  mi_ms : Double, mr_ms : Double,
   total_ms : Double,
 ) -> Unit {
-  let solver_str = if run_chorin && run_simple && run_pcg { "all" }
+  let solver_str = if run_chorin && run_simple && run_pcg && run_mac { "all" }
+                   else if run_chorin && run_simple && run_pcg { "chorin_simple_pcg" }
                    else if run_chorin && run_simple { "both" }
                    else if run_chorin { "chorin" }
                    else { "simple" }
@@ -657,6 +660,7 @@ fn output_json(
   let (cmu, cmv, cmp, cnp, cmm, cdn, ccu, ccv, ccp) = field_stats(u_c, v_c, p_c)
   let (smu, smv, smp, snp, smm, sdn, scu, scv, scp) = field_stats(u_s, v_s, p_s)
   let (pmu, pmv, pmp, pnp, pmm, pdn, pcu, pcv, pcp) = field_stats(u_pcg, v_pcg, p_pcg)
+  let (mmu, mmv, mmp, mnp, mmm, mdn, mcu, mcv, mcp) = field_stats_mac()
 
   println("===JSON_DATA_START===")
   println("{")
@@ -667,13 +671,15 @@ fn output_json(
   println("    \"solver\": \"\{solver_str}\",")
   println("    \"simple_iters\": \{n_s},")
   println("    \"pcg_steps\": \{nt_pcg},")
-  println("    \"pcg_tol\": \{pcg_tol}, \"pcg_max_iter\": \{pcg_max_iter}")
+  println("    \"pcg_tol\": \{pcg_tol}, \"pcg_max_iter\": \{pcg_max_iter},")
+  println("    \"mac_steps\": \{nt_mac}, \"mac_nc\": \{mac_nc}")
   println("  },")
   println("  \"timing\": {")
   println("    \"enabled\": \{timing_enabled},")
   println("    \"chorin_init_ms\": \{ci_ms}, \"chorin_run_ms\": \{cr_ms},")
   println("    \"simple_init_ms\": \{si_ms}, \"simple_run_ms\": \{sr_ms},")
   println("    \"pcg_init_ms\": \{pi_ms}, \"pcg_run_ms\": \{pr_ms},")
+  println("    \"mac_init_ms\": \{mi_ms}, \"mac_run_ms\": \{mr_ms},")
   println("    \"total_ms\": \{total_ms}")
   println("  },")
   // ── Chorin section (backward-compatible keys "statistics" + "grid") ──
@@ -691,7 +697,12 @@ fn output_json(
   println("  \"pcg_statistics\": {")
   emit_stats(pmu, pmv, pmp, pnp, pmm, pdn, pcu, pcv, pcp, pi_ms + pr_ms)
   println("  },")
-  emit_grid("pcg_grid", u_pcg, v_pcg, p_pcg, false)
+  emit_grid("pcg_grid", u_pcg, v_pcg, p_pcg, true)
+  // ── Staggered MAC section ──
+  println("  \"mac_statistics\": {")
+  emit_stats(mmu, mmv, mmp, mnp, mmm, mdn, mcu, mcv, mcp, mi_ms + mr_ms)
+  println("  },")
+  emit_grid_mac("mac_grid", false)
   println("}")
   println("===JSON_DATA_END===")
 }
@@ -1282,6 +1293,531 @@ pub fn get_pcg_divergence_norm() -> Double {
   if count > 0 { sum / count.to_double() } else { 0.0 }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 2 – Staggered MAC grid with PCG pressure solver
+// (Harlow & Welch 1965)
+//
+// Grid layout  (mac_nc = nx−1 = 40 cells per direction):
+//   p[i][j]   cell centre  y=(i+0.5)*dy, x=(j+0.5)*dx    mac_nc × mac_nc
+//   u[i][j]   x-face       y=(i+0.5)*dy, x=j*dx          mac_nc × (mac_nc+1)
+//   v[i][j]   y-face       y=i*dy,       x=(j+0.5)*dx    (mac_nc+1) × mac_nc
+//
+// Wall BCs:
+//   u[i][0] = u[i][mac_nc] = 0            (left/right walls, all rows)
+//   v[0][j] = v[mac_nc][j] = 0            (bottom/top walls, all cols)
+//   Ghost for lid tangential BC:  u_above at i=mac_nc-1 = 2·1 − u[mac_nc-1][j]
+//   Ghost for no-slip bottom:      u_below at i=0       = −u[0][j]
+//   Ghost for no-slip sides (v):   v_right at j=mac_nc-1 = −v[i][j]
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Number of MAC cells per direction (= nx−1 = 40).
+let mac_nc : Int = nx - 1
+
+/// Whether to run the MAC solver in the local `moon run` workflow.
+let run_mac : Bool = true
+
+/// Number of MAC time steps to execute in the local workflow.
+let local_mac_nt : Int = nt
+
+// ── Pressure BCs on mac_nc × mac_nc cell-centre grid ─────────────────────────
+//   dp/dx = 0  at left/right walls  (Neumann)
+//   dp/dy = 0  at bottom            (Neumann)
+//   p = 0      at top lid           (Dirichlet — fixes pressure reference)
+//
+// Note: the Dirichlet BC at the top row means the velocity correction cannot
+// fully eliminate divergence in the top-row pressure cells.  Interior cells
+// (i = 1..mac_nc-2) remain divergence-free to PCG tolerance.
+fn apply_pressure_bcs_mac(p : Array[Array[Double]]) -> Unit {
+  for i = 0; i < mac_nc; i = i + 1 {
+    p[i][0]          = p[i][1]
+    p[i][mac_nc - 1] = p[i][mac_nc - 2]
+  }
+  for j = 0; j < mac_nc; j = j + 1 {
+    p[0][j]          = p[1][j]
+    p[mac_nc - 1][j] = 0.0
+  }
+}
+
+// ── Matrix-free 5-point Laplacian on an nr × nc_ grid ────────────────────────
+fn laplacian_apply_n(
+  v       : Array[Array[Double]],
+  lv      : Array[Array[Double]],
+  inv_dx2 : Double,
+  inv_dy2 : Double,
+  a_diag  : Double,
+  nr      : Int,
+  nc_     : Int,
+) -> Unit {
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc_ - 1; j = j + 1 {
+      let hx = (v[i][j + 1] + v[i][j - 1]) * inv_dx2
+      let hy = (v[i + 1][j] + v[i - 1][j]) * inv_dy2
+      let hc = v[i][j] * a_diag
+      lv[i][j] = hx + hy - hc
+    }
+  }
+}
+
+// ── PCG solver for the MAC pressure Poisson system ───────────────────────────
+fn pressure_poisson_pcg_mac(
+  p   : Array[Array[Double]],
+  dx_ : Double,
+  dy_ : Double,
+  b   : Array[Array[Double]],
+) -> Int {
+  let nr      = mac_nc
+  let nc_     = mac_nc
+  let inv_dx2 = 1.0 / (dx_ * dx_)
+  let inv_dy2 = 1.0 / (dy_ * dy_)
+  let a_diag  = 2.0 * inv_dx2 + 2.0 * inv_dy2
+  let inv_m   = 1.0 / a_diag
+
+  let r  = create_zeros_2d(nr, nc_)
+  let d  = create_zeros_2d(nr, nc_)
+  let ad = create_zeros_2d(nr, nc_)
+
+  apply_pressure_bcs_mac(p)
+  laplacian_apply_n(p, ad, inv_dx2, inv_dy2, a_diag, nr, nc_)
+
+  let mut b_sq = 0.0
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc_ - 1; j = j + 1 {
+      r[i][j] = b[i][j] - ad[i][j]
+      b_sq    = b_sq + b[i][j] * b[i][j]
+    }
+  }
+  let b_norm = b_sq.sqrt()
+  if b_norm < 1.0e-15 {
+    apply_pressure_bcs_mac(p)
+    return 0
+  }
+
+  let mut rho = 0.0
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc_ - 1; j = j + 1 {
+      let zi  = r[i][j] * inv_m
+      d[i][j] = zi
+      rho     = rho + r[i][j] * zi
+    }
+  }
+
+  let mut iter_done = 0
+  for iter = 0; iter < pcg_max_iter; iter = iter + 1 {
+    apply_pressure_bcs_mac(d)
+    laplacian_apply_n(d, ad, inv_dx2, inv_dy2, a_diag, nr, nc_)
+
+    let mut dAd = 0.0
+    for i = 1; i < nr - 1; i = i + 1 {
+      for j = 1; j < nc_ - 1; j = j + 1 {
+        dAd = dAd + d[i][j] * ad[i][j]
+      }
+    }
+    if dAd.abs() < 1.0e-15 { break }
+    let alpha = rho / dAd
+
+    let mut r_sq = 0.0
+    for i = 1; i < nr - 1; i = i + 1 {
+      for j = 1; j < nc_ - 1; j = j + 1 {
+        p[i][j]   = p[i][j] + alpha * d[i][j]
+        let r_new = r[i][j] - alpha * ad[i][j]
+        r[i][j]   = r_new
+        r_sq      = r_sq + r_new * r_new
+      }
+    }
+    iter_done = iter + 1
+    if r_sq.sqrt() < pcg_tol * b_norm { break }
+
+    let mut rho_new = 0.0
+    for i = 1; i < nr - 1; i = i + 1 {
+      for j = 1; j < nc_ - 1; j = j + 1 {
+        rho_new = rho_new + r[i][j] * r[i][j] * inv_m
+      }
+    }
+    if rho.abs() < 1.0e-15 { break }
+    let beta = rho_new / rho
+    rho = rho_new
+
+    for i = 1; i < nr - 1; i = i + 1 {
+      for j = 1; j < nc_ - 1; j = j + 1 {
+        d[i][j] = r[i][j] * inv_m + beta * d[i][j]
+      }
+    }
+  }
+  apply_pressure_bcs_mac(p)
+  iter_done
+}
+
+// ── MAC u-predictor ───────────────────────────────────────────────────────────
+// Computes u* at x-faces (i=0..mac_nc-1, j=1..mac_nc-1).
+// Ghost cells: bottom no-slip → u_below = −u[0][j];
+//              top lid       → u_above = 2·1 − u[mac_nc-1][j].
+fn mac_u_predictor(
+  u   : Array[Array[Double]],
+  v   : Array[Array[Double]],
+  dt_ : Double,
+  dx_ : Double,
+  dy_ : Double,
+  nu_ : Double,
+  us  : Array[Array[Double]],
+) -> Unit {
+  let dx2   = dx_ * dx_
+  let dy2   = dy_ * dy_
+  let u_lid = 1.0
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 1; j < mac_nc; j = j + 1 {
+      // Advection in x: (u_e² − u_w²) / dx
+      let u_e    = (u[i][j] + u[i][j + 1]) / 2.0
+      let u_w    = (u[i][j - 1] + u[i][j]) / 2.0
+      let conv_x = dt_ / dx_ * (u_e * u_e - u_w * u_w)
+
+      // Ghost values for viscosity and y-advection
+      let u_above = if i < mac_nc - 1 { u[i + 1][j] } else { 2.0 * u_lid - u[i][j] }
+      let u_below = if i > 0 { u[i - 1][j] } else { -u[i][j] }
+
+      // Advection in y: (v_n·u_n − v_s·u_s) / dy
+      let u_n    = (u[i][j] + u_above) / 2.0
+      let u_s    = (u_below + u[i][j]) / 2.0
+      let v_n    = (v[i + 1][j - 1] + v[i + 1][j]) / 2.0
+      let v_s    = (v[i][j - 1] + v[i][j]) / 2.0
+      let conv_y = dt_ / dy_ * (v_n * u_n - v_s * u_s)
+
+      // Viscosity
+      let visc_x = nu_ * dt_ / dx2 * (u[i][j + 1] - 2.0 * u[i][j] + u[i][j - 1])
+      let visc_y = nu_ * dt_ / dy2 * (u_above - 2.0 * u[i][j] + u_below)
+
+      us[i][j] = u[i][j] - conv_x - conv_y + visc_x + visc_y
+    }
+    us[i][0]      = 0.0
+    us[i][mac_nc] = 0.0
+  }
+}
+
+// ── MAC v-predictor ───────────────────────────────────────────────────────────
+// Computes v* at y-faces (i=1..mac_nc-1, j=0..mac_nc-1).
+// Ghost cells: left/right no-slip → v_left = −v[i][0], v_right = −v[i][mac_nc-1].
+fn mac_v_predictor(
+  u   : Array[Array[Double]],
+  v   : Array[Array[Double]],
+  dt_ : Double,
+  dx_ : Double,
+  dy_ : Double,
+  nu_ : Double,
+  vs  : Array[Array[Double]],
+) -> Unit {
+  let dx2 = dx_ * dx_
+  let dy2 = dy_ * dy_
+  for i = 1; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      // Advection in y: (v_n² − v_s²) / dy
+      let v_n    = (v[i][j] + v[i + 1][j]) / 2.0
+      let v_s    = (v[i - 1][j] + v[i][j]) / 2.0
+      let conv_y = dt_ / dy_ * (v_n * v_n - v_s * v_s)
+
+      // Advection in x: (u_e·v_e − u_w·v_w) / dx
+      let u_e    = (u[i - 1][j + 1] + u[i][j + 1]) / 2.0
+      let u_w    = (u[i - 1][j] + u[i][j]) / 2.0
+      let v_e    = if j < mac_nc - 1 { (v[i][j] + v[i][j + 1]) / 2.0 } else { 0.0 }
+      let v_w    = if j > 0 { (v[i][j - 1] + v[i][j]) / 2.0 } else { 0.0 }
+      let conv_x = dt_ / dx_ * (u_e * v_e - u_w * v_w)
+
+      // Viscosity in y
+      let visc_y  = nu_ * dt_ / dy2 * (v[i + 1][j] - 2.0 * v[i][j] + v[i - 1][j])
+
+      // Viscosity in x with ghost cells for left/right walls
+      let v_right = if j < mac_nc - 1 { v[i][j + 1] } else { -v[i][j] }
+      let v_left  = if j > 0 { v[i][j - 1] } else { -v[i][j] }
+      let visc_x  = nu_ * dt_ / dx2 * (v_right - 2.0 * v[i][j] + v_left)
+
+      vs[i][j] = v[i][j] - conv_y - conv_x + visc_y + visc_x
+    }
+  }
+  for j = 0; j < mac_nc; j = j + 1 {
+    vs[0][j]      = 0.0
+    vs[mac_nc][j] = 0.0
+  }
+}
+
+// ── Staggered divergence → pressure Poisson RHS ──────────────────────────────
+fn build_up_b_mac(
+  b    : Array[Array[Double]],
+  rho_ : Double,
+  dt_  : Double,
+  us   : Array[Array[Double]],
+  vs   : Array[Array[Double]],
+  dx_  : Double,
+  dy_  : Double,
+) -> Unit {
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      let du  = (us[i][j + 1] - us[i][j]) / dx_
+      let dv  = (vs[i + 1][j] - vs[i][j]) / dy_
+      b[i][j] = rho_ / dt_ * (du + dv)
+    }
+  }
+}
+
+// ── MAC velocity correction ───────────────────────────────────────────────────
+fn mac_correct_velocity(
+  us   : Array[Array[Double]],
+  vs   : Array[Array[Double]],
+  p    : Array[Array[Double]],
+  dt_  : Double,
+  dx_  : Double,
+  dy_  : Double,
+  rho_ : Double,
+  u    : Array[Array[Double]],
+  v    : Array[Array[Double]],
+) -> Unit {
+  let cu = dt_ / rho_ / dx_
+  let cv = dt_ / rho_ / dy_
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 1; j < mac_nc; j = j + 1 {
+      u[i][j] = us[i][j] - cu * (p[i][j] - p[i][j - 1])
+    }
+    u[i][0]      = 0.0
+    u[i][mac_nc] = 0.0
+  }
+  for j = 0; j < mac_nc; j = j + 1 {
+    for i = 1; i < mac_nc; i = i + 1 {
+      v[i][j] = vs[i][j] - cv * (p[i][j] - p[i - 1][j])
+    }
+    v[0][j]      = 0.0
+    v[mac_nc][j] = 0.0
+  }
+}
+
+// ── MAC Chorin-PCG time-marching solver ───────────────────────────────────────
+fn cavity_flow_mac(
+  nt_steps  : Int,
+  u         : Array[Array[Double]],
+  v         : Array[Array[Double]],
+  dt_       : Double,
+  dx_       : Double,
+  dy_       : Double,
+  p         : Array[Array[Double]],
+  rho_      : Double,
+  nu_       : Double,
+  pcg_iters : Array[Int],
+) -> (Array[Array[Double]], Array[Array[Double]], Array[Array[Double]]) {
+  let us = create_zeros_2d(mac_nc, mac_nc + 1)
+  let vs = create_zeros_2d(mac_nc + 1, mac_nc)
+  let b  = create_zeros_2d(mac_nc, mac_nc)
+
+  for n = 0; n < nt_steps; n = n + 1 {
+    mac_u_predictor(u, v, dt_, dx_, dy_, nu_, us)
+    mac_v_predictor(u, v, dt_, dx_, dy_, nu_, vs)
+    build_up_b_mac(b, rho_, dt_, us, vs, dx_, dy_)
+    let iters = pressure_poisson_pcg_mac(p, dx_, dy_, b)
+    pcg_iters[0] = iters
+    mac_correct_velocity(us, vs, p, dt_, dx_, dy_, rho_, u, v)
+    if (n + 1) % 10 == 0 {
+      println("MAC step \{n + 1}/\{nt_steps}: pressure iters=\{iters}")
+    }
+  }
+  (u, v, p)
+}
+
+// ── Global MAC state ──────────────────────────────────────────────────────────
+let g_u_mac : Array[Array[Double]] = {
+  let a = Array::make(mac_nc, Array::make(mac_nc + 1, 0.0))
+  for i = 0; i < mac_nc; i = i + 1 { a[i] = Array::make(mac_nc + 1, 0.0) }
+  a
+}
+
+let g_v_mac : Array[Array[Double]] = {
+  let a = Array::make(mac_nc + 1, Array::make(mac_nc, 0.0))
+  for i = 0; i < mac_nc + 1; i = i + 1 { a[i] = Array::make(mac_nc, 0.0) }
+  a
+}
+
+let g_p_mac : Array[Array[Double]] = {
+  let a = Array::make(mac_nc, Array::make(mac_nc, 0.0))
+  for i = 0; i < mac_nc; i = i + 1 { a[i] = Array::make(mac_nc, 0.0) }
+  a
+}
+
+let g_steps_mac      : Array[Int] = [0]
+let g_mac_last_iters : Array[Int] = [0]
+
+// ── WASM API – MAC solver ─────────────────────────────────────────────────────
+
+pub fn init_mac() -> Unit {
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc + 1; j = j + 1 { g_u_mac[i][j] = 0.0 }
+  }
+  for i = 0; i < mac_nc + 1; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 { g_v_mac[i][j] = 0.0 }
+  }
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 { g_p_mac[i][j] = 0.0 }
+  }
+  g_steps_mac[0]      = 0
+  g_mac_last_iters[0] = 0
+}
+
+pub fn run_mac_n_steps(n : Int) -> Unit {
+  let (u_out, v_out, p_out) = cavity_flow_mac(
+    n, g_u_mac, g_v_mac, dt, dx, dy, g_p_mac, rho, nu, g_mac_last_iters,
+  )
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc + 1; j = j + 1 { g_u_mac[i][j] = u_out[i][j] }
+  }
+  for i = 0; i < mac_nc + 1; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 { g_v_mac[i][j] = v_out[i][j] }
+  }
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 { g_p_mac[i][j] = p_out[i][j] }
+  }
+  g_steps_mac[0] = g_steps_mac[0] + n
+}
+
+pub fn get_mac_step_count() -> Int { g_steps_mac[0] }
+pub fn get_mac_last_iters() -> Int { g_mac_last_iters[0] }
+
+/// Grid dimension for the MAC solver (number of cells per direction).
+pub fn get_mac_nc() -> Int { mac_nc }
+
+/// u interpolated to cell centre (i, j), i,j ∈ [0, mac_nc).
+pub fn get_u_mac_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < mac_nc && j >= 0 && j < mac_nc {
+    (g_u_mac[i][j] + g_u_mac[i][j + 1]) / 2.0
+  } else { 0.0 }
+}
+
+/// v interpolated to cell centre (i, j).
+pub fn get_v_mac_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < mac_nc && j >= 0 && j < mac_nc {
+    (g_v_mac[i][j] + g_v_mac[i + 1][j]) / 2.0
+  } else { 0.0 }
+}
+
+pub fn get_p_mac_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < mac_nc && j >= 0 && j < mac_nc { g_p_mac[i][j] } else { 0.0 }
+}
+
+pub fn get_velocity_magnitude_mac_at(i : Int, j : Int) -> Double {
+  let u_ = get_u_mac_at(i, j)
+  let v_ = get_v_mac_at(i, j)
+  (u_ * u_ + v_ * v_).sqrt()
+}
+
+pub fn get_max_u_mac() -> Double {
+  let mut m = 0.0
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      let val = get_u_mac_at(i, j).abs()
+      if val > m { m = val }
+    }
+  }
+  m
+}
+
+pub fn get_max_v_mac() -> Double {
+  let mut m = 0.0
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      let val = get_v_mac_at(i, j).abs()
+      if val > m { m = val }
+    }
+  }
+  m
+}
+
+pub fn get_max_p_mac() -> Double {
+  let mut m = g_p_mac[0][0]
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      if g_p_mac[i][j] > m { m = g_p_mac[i][j] }
+    }
+  }
+  m
+}
+
+pub fn get_min_p_mac() -> Double {
+  let mut m = g_p_mac[0][0]
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      if g_p_mac[i][j] < m { m = g_p_mac[i][j] }
+    }
+  }
+  m
+}
+
+/// RMS divergence ‖∇·u‖_RMS over the PCG-interior MAC cells (i=1..mac_nc-2, j=1..mac_nc-2).
+/// By the staggered projection theorem, every cell whose pressure is solved by the
+/// PCG has exactly-zero discrete divergence (up to PCG tolerance).
+/// Boundary columns/rows are excluded:
+///   top row (i=mac_nc-1): Dirichlet p=0 prevents correction at the lid face
+///   left/right cols (j=0, j=mac_nc-1): Neumann ghost makes the x-gradient zero there
+///   bottom row (i=0): Neumann ghost makes the y-gradient zero there
+pub fn get_mac_divergence_norm() -> Double {
+  let mut sum = 0.0
+  let cnt = (mac_nc - 2) * (mac_nc - 2)
+  for i = 1; i < mac_nc - 1; i = i + 1 {
+    for j = 1; j < mac_nc - 1; j = j + 1 {
+      let du = (g_u_mac[i][j + 1] - g_u_mac[i][j]) / dx
+      let dv = (g_v_mac[i + 1][j] - g_v_mac[i][j]) / dy
+      let d  = du + dv
+      sum    = sum + d * d
+    }
+  }
+  if cnt > 0 { (sum / cnt.to_double()).sqrt() } else { 0.0 }
+}
+
+// ── JSON helpers for MAC grid ─────────────────────────────────────────────────
+
+/// Compute field statistics for the MAC solver (operates on cell-centre values).
+fn field_stats_mac() -> (Double, Double, Double, Double, Double, Double, Double, Double, Double) {
+  let mut mu = 0.0
+  let mut mv = 0.0
+  let mut mp = g_p_mac[0][0]
+  let mut np_ = g_p_mac[0][0]
+  let mut mm = 0.0
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      let u_ = get_u_mac_at(i, j)
+      let v_ = get_v_mac_at(i, j)
+      let au = u_.abs()
+      let av = v_.abs()
+      if au > mu { mu = au }
+      if av > mv { mv = av }
+      if g_p_mac[i][j] > mp { mp = g_p_mac[i][j] }
+      if g_p_mac[i][j] < np_ { np_ = g_p_mac[i][j] }
+      let mag = (u_ * u_ + v_ * v_).sqrt()
+      if mag > mm { mm = mag }
+    }
+  }
+  let dn  = get_mac_divergence_norm()
+  let mi  = mac_nc / 2
+  let cu  = get_u_mac_at(mi, mi)
+  let cv_ = get_v_mac_at(mi, mi)
+  let cp  = g_p_mac[mi][mi]
+  (mu, mv, mp, np_, mm, dn, cu, cv_, cp)
+}
+
+/// Emit MAC grid as a JSON array keyed by json_key.
+/// Cell centres at x=(j+0.5)*dx, y=(i+0.5)*dy.
+fn emit_grid_mac(json_key : String, trailing_comma : Bool) -> Unit {
+  println("  \"\{json_key}\": [")
+  for i = 0; i < mac_nc; i = i + 1 {
+    for j = 0; j < mac_nc; j = j + 1 {
+      let x_pos = (j.to_double() + 0.5) * dx
+      let y_pos = (i.to_double() + 0.5) * dy
+      let u_    = get_u_mac_at(i, j)
+      let v_    = get_v_mac_at(i, j)
+      let p_    = g_p_mac[i][j]
+      let mag   = (u_ * u_ + v_ * v_).sqrt()
+      let comma = if i == mac_nc - 1 && j == mac_nc - 1 { "" } else { "," }
+      println("    {\"i\":\{i},\"j\":\{j},\"x\":\{x_pos},\"y\":\{y_pos},\"u\":\{u_},\"v\":\{v_},\"p\":\{p_},\"magnitude\":\{mag}}\{comma}")
+    }
+  }
+  if trailing_comma {
+    println("  ],")
+  } else {
+    println("  ]")
+  }
+}
+
 // Fibonacci helper – used only by the bench test in main_bench.mbt.
 fn fib(n : Int) -> Int {
   if n < 2 { return n }
@@ -1308,6 +1844,7 @@ fn main {
   if run_chorin { println("  Chorin     : \{local_nt} steps   (nt_max = \{nt})") }
   if run_simple { println("  SIMPLE     : \{local_simple_n} iterations") }
   if run_pcg    { println("  Chorin-PCG : \{local_pcg_nt} steps  (tol=\{pcg_tol})") }
+  if run_mac    { println("  MAC-PCG    : \{local_mac_nt} steps  (staggered, tol=\{pcg_tol})") }
   println("")
 
   // ── Chorin (projection method, explicit time-marching) ─────────────────────
@@ -1347,6 +1884,17 @@ fn main {
     })
   } else { 0.0 }
 
+  // ── MAC staggered grid with PCG pressure solver ────────────────────────────
+  let m_init_ms = if run_mac {
+    timed(timing_enabled, "MAC init", fn() { init_mac() })
+  } else { 0.0 }
+
+  let m_run_ms = if run_mac {
+    timed(timing_enabled, "MAC \{local_mac_nt} steps", fn() {
+      run_mac_n_steps(local_mac_nt)
+    })
+  } else { 0.0 }
+
   let total_ms = @bench.monotonic_clock_end(prog_ts) / 1000.0
 
   // ── Timing summary ─────────────────────────────────────────────────────────
@@ -1365,6 +1913,10 @@ fn main {
       println("  PCG init    : \{p_init_ms} ms")
       println("  PCG run     : \{p_run_ms} ms")
     }
+    if run_mac {
+      println("  MAC init    : \{m_init_ms} ms")
+      println("  MAC run     : \{m_run_ms} ms")
+    }
     println("  Total       : \{total_ms} ms")
   }
 
@@ -1375,7 +1927,9 @@ fn main {
     g_u, g_v, g_p, local_nt,
     g_u_s, g_v_s, g_p_s, local_simple_n, g_simple_residual[0],
     g_u_pcg, g_v_pcg, g_p_pcg, local_pcg_nt,
+    local_mac_nt,
     c_init_ms, c_run_ms, s_init_ms, s_run_ms, p_init_ms, p_run_ms,
+    m_init_ms, m_run_ms,
     total_ms,
   )
   println("=== Done – drag results.json into cmd/main/local_viewer.html ===")

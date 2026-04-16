@@ -54,7 +54,21 @@
         "get_max_v_pcg",
         "get_max_p_pcg",
         "get_min_p_pcg",
-        "get_pcg_divergence_norm"
+        "get_pcg_divergence_norm",
+        "init_mac",
+        "run_mac_n_steps",
+        "get_mac_step_count",
+        "get_mac_last_iters",
+        "get_mac_nc",
+        "get_u_mac_at",
+        "get_v_mac_at",
+        "get_p_mac_at",
+        "get_velocity_magnitude_mac_at",
+        "get_max_u_mac",
+        "get_max_v_mac",
+        "get_max_p_mac",
+        "get_min_p_mac",
+        "get_mac_divergence_norm"
       ],
       "export-memory-name": "memory"
     },
@@ -108,7 +122,21 @@
         "get_max_v_pcg",
         "get_max_p_pcg",
         "get_min_p_pcg",
-        "get_pcg_divergence_norm"
+        "get_pcg_divergence_norm",
+        "init_mac",
+        "run_mac_n_steps",
+        "get_mac_step_count",
+        "get_mac_last_iters",
+        "get_mac_nc",
+        "get_u_mac_at",
+        "get_v_mac_at",
+        "get_p_mac_at",
+        "get_velocity_magnitude_mac_at",
+        "get_max_u_mac",
+        "get_max_v_mac",
+        "get_max_p_mac",
+        "get_min_p_mac",
+        "get_mac_divergence_norm"
       ],
       "export-memory-name": "memory"
     }
