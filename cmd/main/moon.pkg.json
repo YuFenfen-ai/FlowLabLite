@@ -41,7 +41,20 @@
         "get_v_simple_at",
         "get_p_simple_at",
         "get_max_u_simple",
-        "get_simple_divergence_norm"
+        "get_simple_divergence_norm",
+        "init_chorin_pcg",
+        "run_chorin_pcg_n_steps",
+        "get_pcg_step_count",
+        "get_pcg_last_iters",
+        "get_u_pcg_at",
+        "get_v_pcg_at",
+        "get_p_pcg_at",
+        "get_velocity_magnitude_pcg_at",
+        "get_max_u_pcg",
+        "get_max_v_pcg",
+        "get_max_p_pcg",
+        "get_min_p_pcg",
+        "get_pcg_divergence_norm"
       ],
       "export-memory-name": "memory"
     },
@@ -82,7 +95,20 @@
         "get_v_simple_at",
         "get_p_simple_at",
         "get_max_u_simple",
-        "get_simple_divergence_norm"
+        "get_simple_divergence_norm",
+        "init_chorin_pcg",
+        "run_chorin_pcg_n_steps",
+        "get_pcg_step_count",
+        "get_pcg_last_iters",
+        "get_u_pcg_at",
+        "get_v_pcg_at",
+        "get_p_pcg_at",
+        "get_velocity_magnitude_pcg_at",
+        "get_max_u_pcg",
+        "get_max_v_pcg",
+        "get_max_p_pcg",
+        "get_min_p_pcg",
+        "get_pcg_divergence_norm"
       ],
       "export-memory-name": "memory"
     }

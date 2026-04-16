@@ -642,16 +642,21 @@ fn output_json(
   nt_c : Int,
   u_s : Array[Array[Double]], v_s : Array[Array[Double]], p_s : Array[Array[Double]],
   n_s : Int, res_s : Double,
+  u_pcg : Array[Array[Double]], v_pcg : Array[Array[Double]], p_pcg : Array[Array[Double]],
+  nt_pcg : Int,
   ci_ms : Double, cr_ms : Double,
   si_ms : Double, sr_ms : Double,
+  pi_ms : Double, pr_ms : Double,
   total_ms : Double,
 ) -> Unit {
-  let solver_str = if run_chorin && run_simple { "both" }
+  let solver_str = if run_chorin && run_simple && run_pcg { "all" }
+                   else if run_chorin && run_simple { "both" }
                    else if run_chorin { "chorin" }
                    else { "simple" }
 
   let (cmu, cmv, cmp, cnp, cmm, cdn, ccu, ccv, ccp) = field_stats(u_c, v_c, p_c)
   let (smu, smv, smp, snp, smm, sdn, scu, scv, scp) = field_stats(u_s, v_s, p_s)
+  let (pmu, pmv, pmp, pnp, pmm, pdn, pcu, pcv, pcp) = field_stats(u_pcg, v_pcg, p_pcg)
 
   println("===JSON_DATA_START===")
   println("{")
@@ -660,12 +665,15 @@ fn output_json(
   println("    \"nit\": \{nit}, \"dt\": \{dt}, \"dx\": \{dx}, \"dy\": \{dy},")
   println("    \"rho\": \{rho}, \"nu\": \{nu}, \"re\": \{1.0 * 2.0 / nu},")
   println("    \"solver\": \"\{solver_str}\",")
-  println("    \"simple_iters\": \{n_s}")
+  println("    \"simple_iters\": \{n_s},")
+  println("    \"pcg_steps\": \{nt_pcg},")
+  println("    \"pcg_tol\": \{pcg_tol}, \"pcg_max_iter\": \{pcg_max_iter}")
   println("  },")
   println("  \"timing\": {")
   println("    \"enabled\": \{timing_enabled},")
   println("    \"chorin_init_ms\": \{ci_ms}, \"chorin_run_ms\": \{cr_ms},")
   println("    \"simple_init_ms\": \{si_ms}, \"simple_run_ms\": \{sr_ms},")
+  println("    \"pcg_init_ms\": \{pi_ms}, \"pcg_run_ms\": \{pr_ms},")
   println("    \"total_ms\": \{total_ms}")
   println("  },")
   // ── Chorin section (backward-compatible keys "statistics" + "grid") ──
@@ -678,7 +686,12 @@ fn output_json(
   println("    \"residual\": \{res_s},")
   emit_stats(smu, smv, smp, snp, smm, sdn, scu, scv, scp, si_ms + sr_ms)
   println("  },")
-  emit_grid("simple_grid", u_s, v_s, p_s, false)
+  emit_grid("simple_grid", u_s, v_s, p_s, true)
+  // ── Chorin-PCG section ──
+  println("  \"pcg_statistics\": {")
+  emit_stats(pmu, pmv, pmp, pnp, pmm, pdn, pcu, pcv, pcp, pi_ms + pr_ms)
+  println("  },")
+  emit_grid("pcg_grid", u_pcg, v_pcg, p_pcg, false)
   println("}")
   println("===JSON_DATA_END===")
 }
@@ -899,6 +912,376 @@ pub fn run_simple_n_iter(n : Int) -> Unit {
   g_simple_residual[0] = get_simple_divergence_norm()
 }
 
+// ── [Layer 2: Linear equation solver] Preconditioned Conjugate Gradient ──────
+//
+// Replaces Gauss-Seidel for the pressure Poisson equation  ∇²p = b.
+// The 5-point Laplacian A is symmetric negative definite (with at least one
+// Dirichlet BC → p = 0 at lid). PCG works on −A, which is SPD.
+//
+// Preconditioner: Jacobi (M = diag(A)).  For a uniform grid the diagonal is
+// constant at interior nodes: a_diag = 2/dx² + 2/dy².
+//
+// Stopping criterion: ‖r_k‖ / ‖b‖ < pcg_tol   or   k ≥ pcg_max_iter.
+// Reference: Hestenes & Stiefel (1952), J. Res. NIST 49(6).
+
+/// Maximum PCG iterations per pressure solve.
+let pcg_max_iter : Int = 200
+
+/// Relative residual tolerance for PCG convergence.
+let pcg_tol : Double = 1.0e-5
+
+/// Whether to run the Chorin-PCG solver in the local `moon run` workflow.
+let run_pcg : Bool = true
+
+/// Number of Chorin-PCG time steps to execute in the local workflow.
+let local_pcg_nt : Int = nt
+
+// Apply standard cavity-flow pressure BCs (shared by GS and PCG solvers).
+//   dp/dx = 0  at left/right walls  (Neumann)
+//   dp/dy = 0  at bottom            (Neumann)
+//   p = 0      at top lid           (Dirichlet)
+fn apply_pressure_bcs(p : Array[Array[Double]]) -> Unit {
+  for i = 0; i < ny; i = i + 1 {
+    p[i][0]      = p[i][1]        // left  wall: ghost = interior
+    p[i][nx - 1] = p[i][nx - 2]  // right wall: ghost = interior
+  }
+  for j = 0; j < nx; j = j + 1 {
+    p[0][j]      = p[1][j]   // bottom: ghost = interior
+    p[ny - 1][j] = 0.0       // top lid: Dirichlet p = 0
+  }
+}
+
+// Matrix-free 5-point Laplacian:  lv[i][j] = (∇² v)[i][j]  at interior nodes.
+// Boundary values of v must be set before calling (BCs applied by the caller).
+fn laplacian_apply(v : Array[Array[Double]], lv : Array[Array[Double]],
+                   inv_dx2 : Double, inv_dy2 : Double, a_diag : Double) -> Unit {
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let hx = (v[i][j + 1] + v[i][j - 1]) * inv_dx2
+      let hy = (v[i + 1][j] + v[i - 1][j]) * inv_dy2
+      let hc = v[i][j] * a_diag
+      lv[i][j] = hx + hy - hc
+    }
+  }
+}
+
+// PCG solver for the pressure Poisson system  ∇²p = b.
+// Works matrix-free via laplacian_apply.  Returns the number of PCG iterations
+// actually performed (≤ pcg_max_iter).
+fn pressure_poisson_pcg(p : Array[Array[Double]], dx : Double, dy : Double,
+                        b : Array[Array[Double]]) -> Int {
+  let inv_dx2 = 1.0 / (dx * dx)
+  let inv_dy2 = 1.0 / (dy * dy)
+  let a_diag  = 2.0 * inv_dx2 + 2.0 * inv_dy2
+  let inv_m   = 1.0 / a_diag  // Jacobi: M = diag(A) → M⁻¹r = r / a_diag
+
+  // Working arrays (interior values only; boundary rows/cols used as ghost storage)
+  let r  = create_zeros_2d(ny, nx)  // residual
+  let d  = create_zeros_2d(ny, nx)  // search direction
+  let ad = create_zeros_2d(ny, nx)  // A·d (matrix-vector product)
+
+  // r₀ = b − ∇²p₀;  apply BCs to p₀ first so ghost values are consistent
+  apply_pressure_bcs(p)
+  laplacian_apply(p, ad, inv_dx2, inv_dy2, a_diag)
+
+  let mut b_sq = 0.0
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      r[i][j] = b[i][j] - ad[i][j]
+      b_sq = b_sq + b[i][j] * b[i][j]
+    }
+  }
+  let b_norm = b_sq.sqrt()
+  // Trivial RHS: no solve needed
+  if b_norm < 1.0e-15 {
+    apply_pressure_bcs(p)
+    return 0
+  }
+
+  // d₀ = z₀ = M⁻¹ r₀;  ρ₀ = r₀ᵀ z₀
+  let mut rho = 0.0
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let zi = r[i][j] * inv_m
+      d[i][j] = zi
+      rho = rho + r[i][j] * zi
+    }
+  }
+
+  let mut iter_done = 0
+  for iter = 0; iter < pcg_max_iter; iter = iter + 1 {
+    // q = A dₖ  (apply BCs to d before stencil so ghost cells are correct)
+    apply_pressure_bcs(d)
+    laplacian_apply(d, ad, inv_dx2, inv_dy2, a_diag)
+
+    // αₖ = ρₖ / (dₖᵀ q)
+    let mut dAd = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        dAd = dAd + d[i][j] * ad[i][j]
+      }
+    }
+    // Guard: if search direction is already in kernel, stop
+    if dAd.abs() < 1.0e-15 { break }
+    let alpha = rho / dAd
+
+    // x ← x + α d;  r ← r − α q;  accumulate ‖r‖²
+    let mut r_sq = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        p[i][j] = p[i][j] + alpha * d[i][j]
+        let r_new = r[i][j] - alpha * ad[i][j]
+        r[i][j]  = r_new
+        r_sq = r_sq + r_new * r_new
+      }
+    }
+    iter_done = iter + 1
+
+    // Convergence check: ‖r‖ / ‖b‖ < pcg_tol
+    if r_sq.sqrt() < pcg_tol * b_norm { break }
+
+    // ρ_{k+1} = r_{k+1}ᵀ M⁻¹ r_{k+1}
+    let mut rho_new = 0.0
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        rho_new = rho_new + r[i][j] * r[i][j] * inv_m
+      }
+    }
+    // Guard: stagnated
+    if rho.abs() < 1.0e-15 { break }
+    let beta = rho_new / rho
+    rho = rho_new
+
+    // d_{k+1} = M⁻¹ r_{k+1} + β dₖ
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        d[i][j] = r[i][j] * inv_m + beta * d[i][j]
+      }
+    }
+  }
+
+  apply_pressure_bcs(p)
+  iter_done
+}
+
+// ── [Layer 1] Chorin projection method using PCG for the pressure solve ───────
+//
+// Identical algorithm to cavity_flow_array (Chorin 1968) but the inner pressure
+// solve uses pressure_poisson_pcg instead of pressure_poisson_array (GS).
+// The `pcg_iters` array is updated each step with the PCG iteration count.
+fn cavity_flow_pcg(
+  nt_steps  : Int,
+  u         : Array[Array[Double]],
+  v         : Array[Array[Double]],
+  dt_       : Double,
+  dx_       : Double,
+  dy_       : Double,
+  p         : Array[Array[Double]],
+  rho_      : Double,
+  nu_       : Double,
+  pcg_iters : Array[Int],
+) -> (Array[Array[Double]], Array[Array[Double]], Array[Array[Double]]) {
+  let un = create_zeros_2d(ny, nx)
+  let vn = create_zeros_2d(ny, nx)
+  let b  = create_zeros_2d(ny, nx)
+
+  for n = 0; n < nt_steps; n = n + 1 {
+    copy_2d_array(u, un)
+    copy_2d_array(v, vn)
+
+    build_up_b_array(b, rho_, dt_, u, v, dx_, dy_) |> ignore
+
+    // PCG pressure solve (replaces Gauss-Seidel)
+    let iters = pressure_poisson_pcg(p, dx_, dy_, b)
+    pcg_iters[0] = iters
+
+    // Explicit velocity update – identical to Chorin
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        let conv_u_x = un[i][j] * dt_ / dx_ * (un[i][j] - un[i][j - 1])
+        let conv_u_y = vn[i][j] * dt_ / dy_ * (un[i][j] - un[i - 1][j])
+        let pg_u     = dt_ / (2.0 * rho_ * dx_) * (p[i][j + 1] - p[i][j - 1])
+        let visc_u_x = nu_ * dt_ / (dx_ * dx_) * (un[i][j + 1] - 2.0 * un[i][j] + un[i][j - 1])
+        let visc_u_y = nu_ * dt_ / (dy_ * dy_) * (un[i + 1][j] - 2.0 * un[i][j] + un[i - 1][j])
+        let visc_u   = visc_u_x + visc_u_y
+        u[i][j] = un[i][j] - conv_u_x - conv_u_y - pg_u + visc_u
+      }
+    }
+    for i = 1; i < ny - 1; i = i + 1 {
+      for j = 1; j < nx - 1; j = j + 1 {
+        let conv_v_x = un[i][j] * dt_ / dx_ * (vn[i][j] - vn[i][j - 1])
+        let conv_v_y = vn[i][j] * dt_ / dy_ * (vn[i][j] - vn[i - 1][j])
+        let pg_v     = dt_ / (2.0 * rho_ * dy_) * (p[i + 1][j] - p[i - 1][j])
+        let visc_v_x = nu_ * dt_ / (dx_ * dx_) * (vn[i][j + 1] - 2.0 * vn[i][j] + vn[i][j - 1])
+        let visc_v_y = nu_ * dt_ / (dy_ * dy_) * (vn[i + 1][j] - 2.0 * vn[i][j] + vn[i - 1][j])
+        let visc_v   = visc_v_x + visc_v_y
+        v[i][j] = vn[i][j] - conv_v_x - conv_v_y - pg_v + visc_v
+      }
+    }
+
+    // Velocity BCs: walls first, lid last (corner convention)
+    for j = 0; j < nx; j = j + 1 { u[0][j] = 0.0 }
+    for i = 0; i < ny; i = i + 1 {
+      u[i][0]      = 0.0
+      u[i][nx - 1] = 0.0
+    }
+    for j = 0; j < nx; j = j + 1 { u[ny - 1][j] = 1.0 }  // lid – applied last
+
+    for j = 0; j < nx; j = j + 1 {
+      v[0][j]      = 0.0
+      v[ny - 1][j] = 0.0
+    }
+    for i = 0; i < ny; i = i + 1 {
+      v[i][0]      = 0.0
+      v[i][nx - 1] = 0.0
+    }
+
+    if (n + 1) % 10 == 0 {
+      println("PCG step \{n + 1}/\{nt_steps}: pressure iters=\{iters}")
+    }
+  }
+  (u, v, p)
+}
+
+// ── Global Chorin-PCG state arrays ────────────────────────────────────────────
+let g_u_pcg : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 { a[i] = Array::make(nx, 0.0) }
+  a
+}
+let g_v_pcg : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 { a[i] = Array::make(nx, 0.0) }
+  a
+}
+let g_p_pcg : Array[Array[Double]] = {
+  let a = Array::make(ny, Array::make(nx, 0.0))
+  for i = 0; i < ny; i = i + 1 { a[i] = Array::make(nx, 0.0) }
+  a
+}
+let g_steps_pcg      : Array[Int] = [0]
+let g_pcg_last_iters : Array[Int] = [0]  // PCG iters used in the most recent pressure solve
+
+// ── WASM API for Chorin-PCG solver ────────────────────────────────────────────
+
+/// Reset Chorin-PCG state to zero; call once before the first run_chorin_pcg_n_steps().
+pub fn init_chorin_pcg() -> Unit {
+  g_steps_pcg[0]      = 0
+  g_pcg_last_iters[0] = 0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      g_u_pcg[i][j] = 0.0
+      g_v_pcg[i][j] = 0.0
+      g_p_pcg[i][j] = 0.0
+    }
+  }
+}
+
+/// Run n Chorin-PCG time steps starting from the current state.
+pub fn run_chorin_pcg_n_steps(n : Int) -> Unit {
+  let (u_out, v_out, p_out) = cavity_flow_pcg(
+    n, g_u_pcg, g_v_pcg, dt, dx, dy, g_p_pcg, rho, nu, g_pcg_last_iters,
+  )
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      g_u_pcg[i][j] = u_out[i][j]
+      g_v_pcg[i][j] = v_out[i][j]
+      g_p_pcg[i][j] = p_out[i][j]
+    }
+  }
+  g_steps_pcg[0] = g_steps_pcg[0] + n
+}
+
+/// Return the number of Chorin-PCG time steps completed since init_chorin_pcg().
+pub fn get_pcg_step_count() -> Int { g_steps_pcg[0] }
+
+/// Return the PCG iteration count used in the most recently completed pressure solve.
+pub fn get_pcg_last_iters() -> Int { g_pcg_last_iters[0] }
+
+/// Read PCG u-velocity at grid index (i, j).
+pub fn get_u_pcg_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_u_pcg[i][j] } else { 0.0 }
+}
+
+/// Read PCG v-velocity at grid index (i, j).
+pub fn get_v_pcg_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_v_pcg[i][j] } else { 0.0 }
+}
+
+/// Read PCG pressure at grid index (i, j).
+pub fn get_p_pcg_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx { g_p_pcg[i][j] } else { 0.0 }
+}
+
+/// Return velocity magnitude sqrt(u²+v²) for the PCG field at (i, j).
+pub fn get_velocity_magnitude_pcg_at(i : Int, j : Int) -> Double {
+  if i >= 0 && i < ny && j >= 0 && j < nx {
+    let u = g_u_pcg[i][j]
+    let v = g_v_pcg[i][j]
+    (u * u + v * v).sqrt()
+  } else { 0.0 }
+}
+
+/// Return maximum |u| in the PCG velocity field.
+pub fn get_max_u_pcg() -> Double {
+  let mut m = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let v = g_u_pcg[i][j].abs()
+      if v > m { m = v }
+    }
+  }
+  m
+}
+
+/// Return maximum |v| in the PCG velocity field.
+pub fn get_max_v_pcg() -> Double {
+  let mut m = 0.0
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      let v = g_v_pcg[i][j].abs()
+      if v > m { m = v }
+    }
+  }
+  m
+}
+
+/// Return maximum pressure in the PCG field.
+pub fn get_max_p_pcg() -> Double {
+  let mut m = g_p_pcg[0][0]
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      if g_p_pcg[i][j] > m { m = g_p_pcg[i][j] }
+    }
+  }
+  m
+}
+
+/// Return minimum pressure in the PCG field.
+pub fn get_min_p_pcg() -> Double {
+  let mut m = g_p_pcg[0][0]
+  for i = 0; i < ny; i = i + 1 {
+    for j = 0; j < nx; j = j + 1 {
+      if g_p_pcg[i][j] < m { m = g_p_pcg[i][j] }
+    }
+  }
+  m
+}
+
+/// Return mean |∂u/∂x + ∂v/∂y| for the PCG velocity field.
+pub fn get_pcg_divergence_norm() -> Double {
+  let mut sum = 0.0
+  let count = (ny - 2) * (nx - 2)
+  for i = 1; i < ny - 1; i = i + 1 {
+    for j = 1; j < nx - 1; j = j + 1 {
+      let div_x = (g_u_pcg[i][j + 1] - g_u_pcg[i][j - 1]) / (2.0 * dx)
+      let div_y = (g_v_pcg[i + 1][j] - g_v_pcg[i - 1][j]) / (2.0 * dy)
+      sum = sum + (div_x + div_y).abs()
+    }
+  }
+  if count > 0 { sum / count.to_double() } else { 0.0 }
+}
+
 // Fibonacci helper – used only by the bench test in main_bench.mbt.
 fn fib(n : Int) -> Int {
   if n < 2 { return n }
@@ -922,8 +1305,9 @@ fn main {
 
   println("=== FlowLabLite – Local CFD Solver ===")
   println("Grid: \{nx}×\{ny}  |  Re = \{1.0 * 2.0 / nu}")
-  if run_chorin { println("  Chorin : \{local_nt} steps   (nt_max = \{nt})") }
-  if run_simple { println("  SIMPLE : \{local_simple_n} iterations") }
+  if run_chorin { println("  Chorin     : \{local_nt} steps   (nt_max = \{nt})") }
+  if run_simple { println("  SIMPLE     : \{local_simple_n} iterations") }
+  if run_pcg    { println("  Chorin-PCG : \{local_pcg_nt} steps  (tol=\{pcg_tol})") }
   println("")
 
   // ── Chorin (projection method, explicit time-marching) ─────────────────────
@@ -952,6 +1336,17 @@ fn main {
     })
   } else { 0.0 }
 
+  // ── Chorin-PCG (projection method with PCG pressure solver) ────────────────
+  let p_init_ms = if run_pcg {
+    timed(timing_enabled, "PCG init", fn() { init_chorin_pcg() })
+  } else { 0.0 }
+
+  let p_run_ms = if run_pcg {
+    timed(timing_enabled, "PCG \{local_pcg_nt} steps", fn() {
+      run_chorin_pcg_n_steps(local_pcg_nt)
+    })
+  } else { 0.0 }
+
   let total_ms = @bench.monotonic_clock_end(prog_ts) / 1000.0
 
   // ── Timing summary ─────────────────────────────────────────────────────────
@@ -966,6 +1361,10 @@ fn main {
       println("  SIMPLE init : \{s_init_ms} ms")
       println("  SIMPLE run  : \{s_run_ms} ms")
     }
+    if run_pcg {
+      println("  PCG init    : \{p_init_ms} ms")
+      println("  PCG run     : \{p_run_ms} ms")
+    }
     println("  Total       : \{total_ms} ms")
   }
 
@@ -975,7 +1374,9 @@ fn main {
   output_json(
     g_u, g_v, g_p, local_nt,
     g_u_s, g_v_s, g_p_s, local_simple_n, g_simple_residual[0],
-    c_init_ms, c_run_ms, s_init_ms, s_run_ms, total_ms,
+    g_u_pcg, g_v_pcg, g_p_pcg, local_pcg_nt,
+    c_init_ms, c_run_ms, s_init_ms, s_run_ms, p_init_ms, p_run_ms,
+    total_ms,
   )
   println("=== Done – drag results.json into cmd/main/local_viewer.html ===")
 }

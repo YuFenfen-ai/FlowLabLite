@@ -381,3 +381,135 @@ test "simple_independent_of_chorin" {
   // Chorin state unchanged
   assert_true(approx_eq(u_before, u_after, 1.0e-15))
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tests 27–34: Chorin-PCG solver (pressure_poisson_pcg + cavity_flow_pcg)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Test 27: PCG on trivial (zero) RHS returns 0 iterations ─────────────────
+test "pcg_zero_rhs_zero_iters" {
+  // When b = 0 everywhere the residual is immediately zero → 0 PCG iterations.
+  let p = create_zeros_2d(ny, nx)
+  let b = create_zeros_2d(ny, nx)
+  let iters = pressure_poisson_pcg(p, dx, dy, b)
+  assert_eq(iters, 0)
+}
+
+// ── Test 28: PCG preserves pressure BCs after solve ──────────────────────────
+test "pcg_pressure_bcs_after_solve" {
+  // After a PCG pressure solve the boundary conditions must be satisfied.
+  // Run one Chorin-PCG step and check both Neumann and Dirichlet BCs on p.
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(1)
+  // Dirichlet: p = 0 on top row
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_p_pcg_at(ny - 1, j), 0.0, 1.0e-10))
+  }
+  // Neumann (dp/dx = 0): left and right columns mirror their neighbours
+  for i = 0; i < ny; i = i + 1 {
+    assert_true(approx_eq(get_p_pcg_at(i, 0), get_p_pcg_at(i, 1), 1.0e-10))
+    assert_true(approx_eq(get_p_pcg_at(i, nx - 1), get_p_pcg_at(i, nx - 2), 1.0e-10))
+  }
+  // Neumann (dp/dy = 0): bottom row mirrors row 1
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_p_pcg_at(0, j), get_p_pcg_at(1, j), 1.0e-10))
+  }
+}
+
+// ── Test 29: Chorin-PCG enforces no-slip wall BCs after one step ─────────────
+test "pcg_chorin_wall_bcs" {
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(1)
+  // Left and right walls: u = 0 (exclude top lid row i=ny-1 where u=1)
+  for i = 0; i < ny - 1; i = i + 1 {
+    assert_true(approx_eq(get_u_pcg_at(i, 0),      0.0, 1.0e-12))
+    assert_true(approx_eq(get_u_pcg_at(i, nx - 1), 0.0, 1.0e-12))
+  }
+  // Bottom wall: u = 0 and v = 0
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_u_pcg_at(0, j), 0.0, 1.0e-12))
+    assert_true(approx_eq(get_v_pcg_at(0, j), 0.0, 1.0e-12))
+  }
+  // All v = 0 on left and right walls
+  for i = 0; i < ny; i = i + 1 {
+    assert_true(approx_eq(get_v_pcg_at(i, 0),      0.0, 1.0e-12))
+    assert_true(approx_eq(get_v_pcg_at(i, nx - 1), 0.0, 1.0e-12))
+  }
+}
+
+// ── Test 30: Chorin-PCG maintains lid velocity u = 1 at top row ─────────────
+test "pcg_lid_velocity" {
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(5)
+  // Top row must satisfy u = 1 (lid BC applied after every step)
+  for j = 0; j < nx; j = j + 1 {
+    assert_true(approx_eq(get_u_pcg_at(ny - 1, j), 1.0, 1.0e-12))
+  }
+}
+
+// ── Test 31: Chorin-PCG does not corrupt Chorin or SIMPLE state ──────────────
+test "pcg_state_isolation" {
+  // Run Chorin solver and record centre velocity
+  init_simulation()
+  run_n_steps(50)
+  let u_chorin = get_u_center()
+  // Run SIMPLE
+  init_simple()
+  run_simple_n_iter(30)
+  let u_simple = get_u_simple_at(ny / 2, nx / 2)
+  // Run PCG solver
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(50)
+  // Chorin state must be unchanged
+  assert_true(approx_eq(get_u_center(), u_chorin, 1.0e-15))
+  // SIMPLE state must be unchanged
+  assert_true(approx_eq(get_u_simple_at(ny / 2, nx / 2), u_simple, 1.0e-15))
+}
+
+// ── Test 32: PCG iteration count is bounded by pcg_max_iter ──────────────────
+test "pcg_iter_count_bounded" {
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(10)
+  // get_pcg_last_iters() returns the count from the most recent pressure solve
+  let iters = get_pcg_last_iters()
+  assert_true(iters >= 0)
+  assert_true(iters <= pcg_max_iter)
+}
+
+// ── Test 33: Chorin-PCG pressure field is physically consistent with Chorin ──
+// Both solvers use the same grid, fluid parameters, and Chorin algorithm.
+// After the same number of steps, pressure statistics should be similar.
+test "pcg_vs_chorin_pressure_consistency" {
+  init_simulation()
+  run_n_steps(100)
+  let max_p_gs  = get_max_p()
+  let min_p_gs  = get_min_p()
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(100)
+  let max_p_pcg = get_max_p_pcg()
+  let min_p_pcg = get_min_p_pcg()
+  // Both extrema should have the same sign and be within 20% of each other.
+  // This is a qualitative check: PCG and GS converge to the same solution
+  // but with different iteration counts.
+  assert_true(max_p_gs  > 0.0)
+  assert_true(max_p_pcg > 0.0)
+  assert_true(min_p_gs  < 0.0)
+  assert_true(min_p_pcg < 0.0)
+  // Relative difference in max pressure
+  let rel_diff_max = (max_p_pcg - max_p_gs).abs() / (max_p_gs.abs() + 1.0e-9)
+  assert_true(rel_diff_max < 0.20)
+}
+
+// ── Test 34: Chorin-PCG produces a centre vortex after sufficient steps ───────
+test "pcg_vortex_formation" {
+  init_chorin_pcg()
+  run_chorin_pcg_n_steps(200)
+  // A well-known result for lid-driven cavity flow (Re=20):
+  // the streamwise velocity at the geometric centre (nx/2, ny/2) is negative
+  // because the recirculating vortex drives fluid leftward there.
+  let u_centre = get_u_pcg_at(ny / 2, nx / 2)
+  assert_true(u_centre < 0.0)
+  // Divergence norm should be small (mass conservation)
+  let div_norm = get_pcg_divergence_norm()
+  assert_true(div_norm < 0.05)
+}
