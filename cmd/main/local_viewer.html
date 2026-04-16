@@ -726,6 +726,116 @@
   <span class="smsg loading" id="stMsg">No data loaded — drag a results.json or click Load</span>
 </div>
 
+<!-- ═══ HELP MODAL ════════════════════════════════════════════════════════════ -->
+<div id="helpOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);
+     z-index:1000;overflow-y:auto;padding:32px 16px" onclick="closeHelp(event)">
+  <div style="max-width:640px;margin:auto;background:var(--c-surface);border:1px solid var(--c-border);
+       border-radius:12px;padding:28px 32px;position:relative;color:var(--c-text)">
+    <!-- Close -->
+    <button onclick="closeHelpBtn()" style="position:absolute;top:14px;right:16px;background:none;
+        border:none;color:var(--c-muted);font-size:20px;cursor:pointer;line-height:1"
+        title="Close">&times;</button>
+
+    <!-- Title -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <div style="width:36px;height:36px;background:var(--c-accent);border-radius:8px;
+           display:flex;align-items:center;justify-content:center;font-size:18px">🌊</div>
+      <div>
+        <div style="font-size:16px;font-weight:700;background:linear-gradient(90deg,#3b82f6,#06b6d4);
+             -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
+          FlowLabLite — Results Viewer
+        </div>
+        <div style="font-size:11px;color:var(--c-muted)">
+          2D Lid-Driven Cavity Flow · MoonBit / WebAssembly
+        </div>
+      </div>
+    </div>
+
+    <!-- Usage -->
+    <section style="margin-bottom:20px">
+      <h3 style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.07em;color:var(--c-muted)">Usage</h3>
+      <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--c-text)">
+        <li>Build the solver: <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">bash build_wasm.sh release</code></li>
+        <li>Run and export JSON: <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">bash run_local.sh</code>
+            — produces <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">results.json</code></li>
+        <li>Serve over HTTP: <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">python -m http.server 8080</code></li>
+        <li>Open this page, then <strong>Load JSON</strong> (or drag-and-drop <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">results.json</code>)</li>
+        <li>Use <strong>Demo</strong> to load sample data without running the solver</li>
+      </ol>
+    </section>
+
+    <!-- Controls reference -->
+    <section style="margin-bottom:20px">
+      <h3 style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.07em;color:var(--c-muted)">Controls</h3>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <tr style="border-bottom:1px solid var(--c-border)">
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">BG dropdown</td>
+          <td style="padding:5px 0;line-height:1.5">Changes the coloured frame around each canvas panel (Dark / Black / Navy / Gray / White)</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--c-border)">
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Isolines</td>
+          <td style="padding:5px 0;line-height:1.5">Toggle isocontour lines on Velocity or Pressure canvas. <em>n</em> = number of levels</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--c-border)">
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">u/v fields</td>
+          <td style="padding:5px 0;line-height:1.5">Shows separate x- and y-component velocity maps using a diverging blue–white–red colormap below the main plots</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--c-border)">
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Arrow legend</td>
+          <td style="padding:5px 0;line-height:1.5">Reference scale below the velocity map: arrow length is proportional to flow speed</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--c-border)">
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Chorin / SIMPLE</td>
+          <td style="padding:5px 0;line-height:1.5">Switch between the two solvers. SIMPLE button is disabled if the JSON contains only Chorin data</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--c-border)">
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Playback</td>
+          <td style="padding:5px 0;line-height:1.5">Animates the fields from initial (zero) to final state. Contour lines sweep to their final positions</td>
+        </tr>
+        <tr>
+          <td style="padding:5px 8px 5px 0;color:var(--c-muted);white-space:nowrap">Export</td>
+          <td style="padding:5px 0;line-height:1.5">Save velocity / pressure canvas as PNG, JPEG, or SVG at a chosen resolution; or download raw data as CSV</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- Parameters -->
+    <section style="margin-bottom:20px">
+      <h3 style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.07em;color:var(--c-muted)">Solver parameters (default)</h3>
+      <div style="font-size:12px;font-family:monospace;color:var(--c-text);line-height:1.9;
+           background:var(--c-surface2);border-radius:6px;padding:10px 14px">
+        Grid: 41 × 41 &nbsp;|&nbsp; Re = 20 &nbsp;|&nbsp; ρ = 1.0 &nbsp;|&nbsp; ν = 0.1<br>
+        Chorin: dt = 0.001, nt = 500 steps, nit = 50 (Poisson iterations/step)<br>
+        SIMPLE: α_p = 0.3, α_u = 0.7 (under-relaxation factors)<br>
+        Domain: 2 × 2, dx = dy = 0.05
+      </div>
+    </section>
+
+    <!-- About / Developer -->
+    <section style="border-top:1px solid var(--c-border);padding-top:16px">
+      <h3 style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.07em;color:var(--c-muted)">About</h3>
+      <p style="font-size:13px;line-height:1.7;margin:0 0 10px">
+        Solves the 2D incompressible Navier-Stokes equations in a square lid-driven cavity.
+        The top boundary moves at <em>u</em> = 1; all other walls are no-slip.
+        Pressure is solved via a Poisson equation (Gauss-Seidel iterations per step).
+      </p>
+      <p style="font-size:12px;color:var(--c-muted);line-height:1.8;margin:0">
+        Solver: MoonBit → WebAssembly (wasm-gc, Chrome 115+)<br>
+        Author: <strong style="color:var(--c-text)">Fenfen Yu (余芬芬)</strong><br>
+        Affiliations: Beihang University &nbsp;·&nbsp; Ezhou Hi-Modeling Technology Co., Ltd.<br>
+        License: Apache-2.0
+      </p>
+      <p style="font-size:11px;color:#475569;margin:12px 0 0;text-align:center">
+        FlowLabLite &copy; 2026 Ezhou Hi-Modeling Technology Co., Ltd. &nbsp;|&nbsp; Apache-2.0
+      </p>
+    </section>
+  </div>
+</div>
+
 <!-- ═══ SCRIPT ════════════════════════════════════════════════════════════════ -->
 <script>
 (function () {
@@ -1632,6 +1742,22 @@ function drawArrowLegend() {
   ctx.fillStyle = arrowColor();
   ctx.fillText('speed (m/s)', padL, ch-12);
 }
+
+// ── Help modal ────────────────────────────────────────────────────────────────
+window.showHelp = function () {
+  document.getElementById('helpOverlay').style.display = '';
+};
+window.closeHelp = function (e) {
+  // Close when clicking the dark overlay (not the modal card itself)
+  if (e.target === document.getElementById('helpOverlay'))
+    document.getElementById('helpOverlay').style.display = 'none';
+};
+window.closeHelpBtn = function () {
+  document.getElementById('helpOverlay').style.display = 'none';
+};
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('helpOverlay').style.display = 'none';
+});
 
 // ── Fullscreen ────────────────────────────────────────────────────────────────
 document.getElementById('btnFs').addEventListener('click', () => {
