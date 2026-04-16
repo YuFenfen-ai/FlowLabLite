@@ -1,33 +1,43 @@
 # FlowLabLite — Execution Flow Diagrams
 
-## 1. `main()` Function
+> **更新说明（2026-04-16）：** 新增 Chorin-PCG 和 MAC 交错网格求解器，
+> main() 扩展为四求解器串行运行，JSON 输出增加 `pcg_grid` / `mac_grid` 两个字段。
 
-> **更新说明（2026-04-15）：** main() 已重构，使用 `@bench` 实现真实计时，  
-> 同时运行 Chorin 和 SIMPLE 两个求解器，输出包含双结果的统一 JSON。  
-> 已移除：`now_seconds()`（存根）、`generate_mesh_grid()`（仅本地使用）、  
-> `write_velocity_to_file()`（无效占位实现）。
+---
+
+## 1. `main()` 函数
 
 ```mermaid
 flowchart TD
     A([main 入口]) --> B[@bench.monotonic_clock_start\n记录程序启动时间戳]
-    B --> C[打印求解器配置\n网格 41×41 / Re=20\nChorin local_nt 步 / SIMPLE local_simple_n 次]
+    B --> C[打印求解器配置\n网格 41×41 / Re=20]
 
-    C --> D{run_chorin = true?}
-    D -- 是 --> E["timed('Chorin init')\n→ init_simulation()"]
+    C --> D{run_chorin?}
+    D -- 是 --> E["timed → init_simulation()"]
     D -- 否 --> G
-    E --> F["timed('Chorin N steps')\n→ run_n_steps(local_nt)"]
-    F --> G{run_simple = true?}
+    E --> F["timed → run_n_steps(local_nt)"]
+    F --> G{run_simple?}
 
-    G -- 是 --> H["timed('SIMPLE init')\n→ init_simple()"]
+    G -- 是 --> H["timed → init_simple()"]
     G -- 否 --> J
-    H --> I["timed('SIMPLE N iters')\n→ run_simple_n_iter(local_simple_n)"]
-    I --> J[@bench.monotonic_clock_end\n计算 total_ms]
+    H --> I["timed → run_simple_n_iter(local_simple_n)"]
+    I --> J{run_pcg?}
 
-    J --> K{timing_enabled?}
-    K -- 是 --> L[打印 Timing Summary\n各阶段 ms + 总计]
-    K -- 否 --> M
-    L --> M[output_json\ng_u/v/p + g_u_s/v_s/p_s\n+ timing → JSON_DATA 标记块]
-    M --> N([结束])
+    J -- 是 --> K["timed → init_chorin_pcg()"]
+    J -- 否 --> M
+    K --> L["timed → run_chorin_pcg_n_steps(local_pcg_nt)"]
+    L --> M{run_mac?}
+
+    M -- 是 --> N["timed → init_mac()"]
+    M -- 否 --> P
+    N --> O["timed → run_mac_n_steps(local_mac_nt)"]
+    O --> P[@bench.monotonic_clock_end\n计算 total_ms]
+
+    P --> Q{timing_enabled?}
+    Q -- 是 --> R[打印 Timing Summary\n各阶段 ms + 总计]
+    Q -- 否 --> S
+    R --> S["output_json\n四求解器统计 + 网格 → JSON_DATA 块"]
+    S --> T([结束])
 ```
 
 ### 本地运行配置常量（`main.mbt` 顶部）
@@ -35,12 +45,14 @@ flowchart TD
 | 常量 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `timing_enabled` | Bool | true | 计时总开关 |
-| `time_chorin_phase` | Bool | true | Chorin 分项计时 |
-| `time_simple_phase` | Bool | true | SIMPLE 分项计时 |
 | `run_chorin` | Bool | true | 是否运行 Chorin |
 | `local_nt` | Int | nt=500 | Chorin 步数 |
 | `run_simple` | Bool | true | 是否运行 SIMPLE |
 | `local_simple_n` | Int | 100 | SIMPLE 迭代次数 |
+| `run_pcg` | Bool | true | 是否运行 Chorin-PCG |
+| `local_pcg_nt` | Int | nt=500 | PCG 步数 |
+| `run_mac` | Bool | true | 是否运行 MAC |
+| `local_mac_nt` | Int | nt=500 | MAC 步数 |
 
 ---
 
@@ -48,31 +60,17 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A([cavity_flow_array\nnt, u, v, dt, dx, dy, p, rho, nu]) --> B[分配工作数组\nun, vn, b]
-    B --> C{n = 0; n < nt?}
-    C -- 否，循环结束 --> Z([返回 u, v, p])
-    C -- 是 --> D[copy_2d_array\nu → un,  v → vn\n保存旧时间层]
-
-    D --> E[build_up_b_array\n计算压力 Poisson 右端项 b\nb = ρ·1/dt·∇·u − 对流项²]
-
-    E --> F[pressure_poisson_array\nGauss-Seidel 迭代 nit=50 次\n求解 ∇²p = b]
-
-    F --> G[更新 u 动量方程\n内部节点 i=1..ny-2, j=1..nx-2\nu = un − 对流 − ∂p/∂x + 粘性]
-
-    G --> H[更新 v 动量方程\n内部节点 i=1..ny-2, j=1..nx-2\nv = vn − 对流 − ∂p/∂y + 粘性]
-
-    H --> I[施加速度边界条件\n底壁/左壁/右壁: u=v=0\n顶盖: u=1, v=0]
-
-    I --> J{n+1 mod 10 = 0?}
-    J -- 是 --> K[打印进度\nTime step n+1/nt]
-    J -- 否 --> L[n = n+1]
-    K --> L
-    L --> C
+    A([cavity_flow_array]) --> B[分配工作数组 un, vn, b]
+    B --> C{n < nt?}
+    C -- 否 --> Z([返回 u, v, p])
+    C -- 是 --> D[copy u→un, v→vn]
+    D --> E[build_up_b_array\n压力 Poisson 右端项]
+    E --> F[pressure_poisson_array\nGauss-Seidel nit=50 次]
+    F --> G[更新 u, v 动量方程\n内部节点]
+    G --> H[施加速度边界条件\n侧壁先 → 顶盖最后]
+    H --> I[n = n + 1]
+    I --> C
 ```
-
-> **压力 Poisson 右端项 b（`build_up_b_array`）**
->
-> $$b_{i,j} = \rho \left[\frac{1}{\Delta t}\left(\frac{\partial u}{\partial x}+\frac{\partial v}{\partial y}\right) - \left(\frac{\partial u}{\partial x}\right)^2 - 2\frac{\partial u}{\partial y}\frac{\partial v}{\partial x} - \left(\frac{\partial v}{\partial y}\right)^2\right]$$
 
 ---
 
@@ -80,41 +78,135 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    START([run_simple_n_iter\nn 次迭代]) --> INIT[分配工作数组\nu_star, v_star, b, p_corr]
-
-    INIT --> LOOP{k = 0; k < n?}
-    LOOP -- 否 --> POST[缓存收敛残差\ng_simple_residual =\nget_simple_divergence_norm]
+    START([run_simple_n_iter n 次]) --> LOOP{k < n?}
+    LOOP -- 否 --> POST[缓存收敛残差]
     POST --> END([返回])
-
     LOOP -- 是 --> A
 
-    subgraph ONE ["simple_one_iter — 单次 SIMPLE 扫描"]
-        A[/"(a) 动量预测步\n内部节点 i=1..ny-2, j=1..nx-2"/]
-        A --> A1["u_new = u − 对流_u − ∂p*/∂x + 粘性_u\nu* = α_u · u_new + (1−α_u) · u\n（α_u = 0.7 速度欠松弛）"]
-        A1 --> A2["v_new = v − 对流_v − ∂p*/∂y + 粘性_v\nv* = α_u · v_new + (1−α_u) · v"]
-        A2 --> B["施加 u*, v* 边界条件\n侧壁先设 → 顶盖最后设\nu*[top,:] = 1,  其余 = 0"]
-        B --> C[/"(b) 构造压力修正源项\nb = build_up_b_array(u*, v*)"/]
-        C --> D[/"(c) 求解压力修正 Poisson\np' = pressure_poisson_array(b)\nGauss-Seidel 50 次"/]
-        D --> E[/"(d) 场量更新（欠松弛）\n内部节点"/]
-        E --> E1["p  ← p* + α_p · p'\n（α_p = 0.3 压力欠松弛）"]
-        E1 --> E2["u  ← u* − dt/(2ρ·dx) · (p'[j+1]−p'[j-1])\nv  ← v* − dt/(2ρ·dy) · (p'[i+1]−p'[i-1])"]
-        E2 --> F["施加 u, v, p 边界条件\n速度：侧壁→顶盖\n压力：Neumann 底/侧壁，p=0 顶部"]
+    subgraph ONE ["single SIMPLE sweep"]
+        A["(a) 动量预测\nu* = u − 对流 − ∂p*/∂x + 粘性\n（α_u = 0.7 速度欠松弛）"]
+        A --> B[施加 u*, v* 边界条件]
+        B --> C["(b) 压力修正源项 b = build_up_b_array(u*, v*)"]
+        C --> D["(c) Gauss-Seidel 50次 → p'"]
+        D --> E["(d) 场量更新\np ← p* + α_p·p'  (α_p=0.3)\nu/v ← u*/v* − 梯度修正"]
+        E --> F[施加 u, v, p 边界条件]
     end
 
     F --> G[g_simple_iters += 1]
     G --> LOOP
 ```
 
-### 欠松弛因子
+---
 
-| 参数 | 值 | 作用 |
-|---|---|---|
-| `simple_alpha_u` | 0.7 | 速度欠松弛，抑制动量方程振荡 |
-| `simple_alpha_p` | 0.3 | 压力欠松弛，稳定压力修正收敛 |
+## 4. Chorin-PCG 求解器 — `cavity_flow_pcg()`
 
-### 收敛判据
+```mermaid
+flowchart TD
+    A([cavity_flow_pcg]) --> B[分配工作数组 un, vn, b]
+    B --> C{n < nt?}
+    C -- 否 --> Z([返回 u, v, p])
+    C -- 是 --> D[copy u→un, v→vn]
+    D --> E[build_up_b_array\n压力 Poisson 右端项]
+    E --> F[pressure_poisson_pcg\nPCG + Jacobi 预条件\n容差 1e-6，最多 200 次]
+    F --> G[更新 u, v 动量方程]
+    G --> H[施加边界条件]
+    H --> I[n = n + 1]
+    I --> C
+```
 
-$$\text{residual} = \frac{1}{(N_x-2)(N_y-2)} \sum_{i,j} \left|\frac{\partial u}{\partial x} + \frac{\partial v}{\partial y}\right|$$
+### PCG 内层迭代（`pressure_poisson_pcg`）
 
-每批 `run_simple_n_iter(n)` 结束后自动计算并缓存到 `g_simple_residual`，
-可通过 `get_simple_residual()` 读取。
+```mermaid
+flowchart TD
+    A([PCG 入口\n初始 r = b − Ap]) --> B[Jacobi 预条件\nz = r / a_diag]
+    B --> C[ρ = r·z, p_vec = z]
+    C --> D{iter < max_iter\n且 |r| > tol?}
+    D -- 否 --> Z([返回 p])
+    D -- 是 --> E[Ap = laplacian_apply_n(p_vec)]
+    E --> F[α = ρ / (p_vec·Ap)\nx += α·p_vec\nr -= α·Ap]
+    F --> G[Jacobi 预条件 z = r / a_diag]
+    G --> H[ρ_new = r·z\nβ = ρ_new / ρ]
+    H --> I[p_vec = z + β·p_vec]
+    I --> J[ρ = ρ_new, iter += 1]
+    J --> D
+```
+
+---
+
+## 5. MAC 交错网格求解器 — `cavity_flow_mac()`
+
+```mermaid
+flowchart TD
+    A([cavity_flow_mac]) --> B[初始化全零速度/压力]
+    B --> C{step < nt?}
+    C -- 否 --> Z([返回])
+    C -- 是 --> D["mac_u_predictor()\nu* = u − 对流_u − ∂p/∂x + 粘性_u\n幽灵单元 BC：顶盖 u_above = 2U_lid − u[i][j]"]
+    D --> E["mac_v_predictor()\nv* = v − 对流_v − ∂p/∂y + 粘性_v\n幽灵单元 BC：侧壁 v_ghost = −v[i][j]"]
+    E --> F["build_up_b_mac()\nb[i][j] = ρ/dt·(∂u*/∂x + ∂v*/∂y)"]
+    F --> G["pressure_poisson_pcg_mac()\nPCG on mac_nc×mac_nc grid\nDirichlet p=0 at top\nNeumann on other walls"]
+    G --> H["mac_correct_velocity()\nu[i][j] = u*[i][j] − dt/ρ/dx·(p[i][j]−p[i][j-1])\nv[i][j] = v*[i][j] − dt/ρ/dy·(p[i][j]−p[i-1][j])"]
+    H --> I[step += 1]
+    I --> C
+```
+
+### MAC 网格布局
+
+```
+压力 p：mac_nc × mac_nc 单元中心
+        ┌─────┬─────┬─────┐
+    u→  │  p  │  p  │  p  │  ← u→
+        ├─────┼─────┼─────┤
+    u→  │  p  │  p  │  p  │  ← u→
+        ├─────┼─────┼─────┤
+    u→  │  p  │  p  │  p  │  ← u→
+        └──↑──┴──↑──┴──↑──┘
+           v     v     v
+
+u at x-faces: mac_nc × (mac_nc+1)
+v at y-faces: (mac_nc+1) × mac_nc
+```
+
+### 散度为零的保证
+
+PCG-内部单元（i=1..mac_nc-2, j=1..mac_nc-2）满足：
+
+$$\text{div}\,\mathbf{u}^{n+1}_{i,j} = \text{div}\,\mathbf{u}^*_{i,j} - \frac{\Delta t}{\rho}\nabla^2 p_{i,j} = \frac{\Delta t}{\rho}\left(b_{i,j} - \nabla^2 p_{i,j}\right) = 0$$
+
+因为 PCG 求解 ∇²p = b，所以内部散度精确为零（至 PCG 容差）。
+
+---
+
+## 6. JSON 输出结构
+
+```
+===JSON_DATA_START===
+{
+  "config": {
+    "nx": 41, "ny": 41, "nt": 500,
+    "nit": 50, "dt": 0.001, "dx": 0.05, "dy": 0.05,
+    "rho": 1.0, "nu": 0.1, "re": 20.0,
+    "solver": "all",
+    "simple_iters": 100,
+    "pcg_steps": 500,
+    "pcg_tol": 1e-6, "pcg_max_iter": 200,
+    "mac_steps": 500, "mac_nc": 40
+  },
+  "timing": {
+    "enabled": true,
+    "chorin_init_ms": ..., "chorin_run_ms": ...,
+    "simple_init_ms": ..., "simple_run_ms": ...,
+    "pcg_init_ms": ...,    "pcg_run_ms": ...,
+    "mac_init_ms": ...,    "mac_run_ms": ...,
+    "total_ms": ...
+  },
+  "statistics":       { max_u, max_v, max_p, min_p, ... },  // Chorin
+  "grid":             [ {i,j,x,y,u,v,p,magnitude}, ... ],   // 41×41 = 1681 pts
+  "simple_statistics":{ residual, max_u, ... },
+  "simple_grid":      [ ... ],   // 1681 pts
+  "pcg_statistics":   { max_u, ... },
+  "pcg_grid":         [ ... ],   // 1681 pts
+  "mac_statistics":   { max_u, ... },
+  "mac_grid":         [ ... ]    // 40×40 = 1600 pts (cell centres)
+}
+===JSON_DATA_END===
+```

@@ -5,12 +5,14 @@ written in [MoonBit](https://www.moonbitlang.com/).
 It compiles to WebAssembly (wasm-gc) and ships an interactive browser-based
 visualization page (`cmd/main/main.html`) with no runtime dependencies.
 
-Two independent solvers are provided:
+Four independent solvers are provided:
 
-| Solver | Algorithm | Use case |
-|---|---|---|
-| **Chorin** | Projection method, explicit time-marching | Transient simulation, 500 time steps |
-| **SIMPLE** | Semi-Implicit Method for Pressure-Linked Equations | Steady-state iteration with under-relaxation |
+| Solver | Algorithm | Grid | Use case |
+|---|---|---|---|
+| **Chorin** | Projection method, explicit time-marching | 41×41 nodes | Transient simulation, 500 time steps |
+| **SIMPLE** | Pressure-correction iteration, under-relaxation | 41×41 nodes | Steady-state iterative solve |
+| **Chorin-PCG** | Projection method + PCG pressure solve | 41×41 nodes (collocated) | Transient, faster pressure convergence |
+| **MAC** | Harlow-Welch staggered grid, PCG pressure | 40×40 cells | Transient, divergence-free by construction |
 
 ---
 
@@ -19,47 +21,72 @@ Two independent solvers are provided:
 ```
 FlowLabLite/
 ├── cmd/main/
-│   ├── main.mbt          # Core CFD solver + exported WASM API (pub fn …)
+│   ├── main.mbt          # All solver code (Chorin + SIMPLE + PCG + MAC) + WASM API
 │   ├── main_bench.mbt    # Micro-benchmark (fib baseline)
-│   ├── main_wbtest.mbt   # White-box unit tests (26 tests)
+│   ├── main_wbtest.mbt   # White-box unit tests (42 tests)
 │   ├── main.html         # Browser visualization (loads WASM, draws canvases)
-│   ├── local_viewer.html # Browser viewer for locally computed JSON results
-│   ├── moon.pkg.json     # Package config: imports, link/exports for both wasm targets
+│   ├── local_viewer.html # Browser viewer for locally computed JSON results (4-solver tabs)
+│   ├── moon.pkg.json     # Package config: imports, link/exports (62 functions)
 │   └── moon.pkg          # Legacy pkg marker (is-main: true) – required by moon tool
 ├── lib/
 │   └── moon.pkg.json     # Library package placeholder
-├── moon.mod.json         # Module manifest (package name, version)
+├── docs/
+│   ├── flow.md           # Execution flow diagrams (Mermaid)
+│   ├── validation_report.md  # Numerical validation: Chorin v0.0.1 vs HEAD
+│   ├── design_pcg_solver.md  # PCG solver design notes
+│   ├── dev_notes_20260415.md # Session notes: SIMPLE + timing
+│   ├── dev_notes_20260416.md # Session notes: PCG + MAC staggered grid
+│   └── cfd_terminology.md    # CFD glossary
+├── moon.mod.json         # Module manifest
 ├── build_wasm.sh         # Build script that re-links WASM with -exported_functions
-├── run_local.sh          # Run solver locally + extract JSON results for viewer
-└── README.md
+└── run_local.sh          # Run solver locally + extract JSON results for viewer
 ```
 
 ### Key source file: `cmd/main/main.mbt`
 
+**Chorin solver**
+
 | Section | Description |
 |---|---|
-| Constants (`nx`, `ny`, `nt`, …) | Grid dimensions 41×41, 500 time steps, Re = 20 |
-| Global arrays (`g_u`, `g_v`, `g_p`) | Chorin simulation state, allocated once |
-| `init_simulation()` | Zeroes Chorin state; JS calls this before running |
-| `run_n_steps(n)` | Advances Chorin solver by *n* time steps; used for progressive rendering |
-| `run_all_steps()` | Runs all `nt` steps in one call |
-| `get_u_at(i,j)` / `get_v_at` / `get_p_at` | Point access to Chorin velocity/pressure fields |
-| `get_max_u()` … `get_min_p()` | Chorin field statistics |
-| `get_divergence_norm()` | Mean \|div u\| over interior cells (convergence indicator) |
-| `cavity_flow_array()` | Navier-Stokes solver core (Chorin projection, finite-difference) |
-| `pressure_poisson_array()` | Iterative pressure solve (Gauss-Seidel, `nit` iterations) |
-| `output_json(…)` | Outputs dual-solver grid data as JSON to stdout; config + timing + Chorin (`statistics`/`grid`) + SIMPLE (`simple_statistics`/`simple_grid`) |
-| `timed(enabled, label, f)` | Timing helper: runs `f()`, prints `[Timing]` line when enabled, returns elapsed ms |
-| **SIMPLE constants** | `simple_alpha_p = 0.3`, `simple_alpha_u = 0.7` (under-relaxation) |
-| **SIMPLE state** (`g_u_s`, `g_v_s`, `g_p_s`) | Independent 41×41 arrays for SIMPLE solver |
-| `init_simple()` | Zeroes SIMPLE state; must be called before `run_simple_n_iter` |
-| `run_simple_n_iter(n)` | Runs *n* SIMPLE iterations; caches convergence residual |
-| `get_simple_step_count()` | Number of SIMPLE iterations completed |
-| `get_simple_residual()` | Latest continuity residual ‖div u‖ (convergence indicator) |
-| `get_u_simple_at(i,j)` / `get_v_simple_at` / `get_p_simple_at` | Point access to SIMPLE fields |
-| `get_max_u_simple()` | Maximum \|u\| in SIMPLE field |
-| `get_simple_divergence_norm()` | Mean \|div u\| over SIMPLE interior cells |
-| `simple_one_iter()` | One SIMPLE sweep: momentum predictor → pressure correction → update |
+| `init_simulation()` | Zeroes Chorin state (`g_u`, `g_v`, `g_p`), resets step counter |
+| `run_n_steps(n)` | Advances Chorin by *n* time steps |
+| `cavity_flow_array()` | Core Navier-Stokes loop (explicit projection, finite-difference) |
+| `pressure_poisson_array()` | Gauss-Seidel pressure solve (`nit` iterations) |
+| `get_u/v/p_at(i,j)` | Point access to Chorin fields |
+| `get_divergence_norm()` | Mean \|div u\| over interior cells |
+
+**SIMPLE solver**
+
+| Section | Description |
+|---|---|
+| `init_simple()` | Zeroes SIMPLE state (`g_u_s`, `g_v_s`, `g_p_s`) |
+| `run_simple_n_iter(n)` | Runs *n* SIMPLE iterations with under-relaxation |
+| `simple_one_iter()` | One SIMPLE sweep: predictor → pressure correction → update |
+| `get_u/v/p_simple_at(i,j)` | Point access to SIMPLE fields |
+
+**Chorin-PCG solver**
+
+| Section | Description |
+|---|---|
+| `init_chorin_pcg()` | Zeroes PCG state (`g_u_pcg`, `g_v_pcg`, `g_p_pcg`) |
+| `run_chorin_pcg_n_steps(n)` | Advances PCG solver by *n* time steps |
+| `pressure_poisson_pcg()` | PCG pressure solve with Jacobi preconditioner |
+| `laplacian_apply()` | Matrix-free 5-point Laplacian (collocated grid) |
+| `get_u/v/p_pcg_at(i,j)` | Point access to PCG fields |
+
+**MAC staggered-grid solver**
+
+| Section | Description |
+|---|---|
+| `init_mac()` | Zeroes MAC state (`g_u_mac`, `g_v_mac`, `g_p_mac`) |
+| `run_mac_n_steps(n)` | Advances MAC solver by *n* time steps |
+| `cavity_flow_mac()` | MAC main loop: predictor → divergence → PCG → correction |
+| `mac_u_predictor()` / `mac_v_predictor()` | Advection-diffusion step with ghost-cell BCs |
+| `pressure_poisson_pcg_mac()` | PCG pressure solve on `mac_nc × mac_nc` grid |
+| `mac_correct_velocity()` | Velocity correction: u -= dt/ρ/dx · ∂p/∂x |
+| `apply_pressure_bcs_mac()` | Dirichlet p=0 at top lid; Neumann on other walls |
+| `get_u/v/p_mac_at(i,j)` | Point access to MAC fields |
+| `get_mac_divergence_norm()` | Mean \|div u\| over PCG-interior cells (i,j = 1..nc-2) |
 
 ---
 
@@ -77,19 +104,11 @@ FlowLabLite/
 
 ## Quick Start — From Source to Browser
 
-This section shows the complete workflow from a clean checkout to viewing results
-in the browser.
-
 ### 1. Install dependencies
 
 ```bash
-# MoonBit toolchain (moon + moonc)
-# Download and install from https://www.moonbitlang.com/download/
-# After install, verify:
 moon version
 moonc -v
-
-# Node.js (only needed for WASM export verification in build_wasm.sh)
 node --version   # 18+ required
 ```
 
@@ -103,37 +122,27 @@ cd FlowLabLite
 ### 3. Run the tests
 
 ```bash
-moon test --target wasm    # runs all 26 tests (Chorin + SIMPLE)
+moon test --target wasm    # runs all 42 tests (all four solvers)
 ```
 
 Expected output:
 ```
-Total tests: 26, passed: 26, failed: 0.
+Total tests: 42, passed: 42, failed: 0.
 ```
 
 ### 4. Build the WASM binary
 
 ```bash
-bash build_wasm.sh release    # optimised build  → _build/wasm-gc/release/…/main.wasm
-# or
-bash build_wasm.sh            # debug build       → _build/wasm-gc/debug/…/main.wasm
+bash build_wasm.sh release    # optimised build
+bash build_wasm.sh            # debug build
 ```
 
-The script prints the export list (38 functions + `_start` + `memory` = 40 symbols).
+The script prints the export list (62 functions + `_start` + `memory` = 64 symbols).
 
 ### 5. Serve over HTTP
 
-The browser uses `fetch()` to load the WASM, so the page must be served over HTTP
-(not opened as `file://`). Serve from the **project root**:
-
 ```bash
-# Python (built-in, no install needed)
 python -m http.server 8080
-
-# Node.js
-npx serve .
-
-# VS Code Live Server extension — right-click project root → "Open with Live Server"
 ```
 
 ### 6. Open in Chrome 115+
@@ -142,37 +151,19 @@ npx serve .
 http://localhost:8080/cmd/main/main.html
 ```
 
-### 7. Run the simulation
-
-1. Click **Load WASM** — status shows "WebAssembly module loaded successfully"
-2. Click **Run Full Simulation** (or press `F`) — canvases update progressively
-3. To run SIMPLE in the browser, open the browser DevTools console and type:
-
-```javascript
-// SIMPLE solver API (all functions are on the wasm instance)
-wasm.init_simple();
-// Run 200 SIMPLE iterations in chunks of 50 for progressive updates
-for (let i = 0; i < 4; i++) {
-  wasm.run_simple_n_iter(50);
-  console.log('iter', wasm.get_simple_step_count(),
-              'residual', wasm.get_simple_residual());
-}
-```
-
 ---
 
 ## How to Build
 
-### Step 1 – Compile MoonBit source to `.core` files
+### Step 1 – Compile
 
 ```bash
-moon build --target wasm-gc          # debug build (includes source-map)
-moon build --target wasm-gc --release  # release build (smaller, faster)
+moon build --target wasm-gc          # debug build
+moon build --target wasm-gc --release  # release build
 ```
 
 > **Known issue in moon 0.1.20260309:** `moon build` alone does not export
-> the API functions — the compiled WASM only has `_start`.
-> Use `build_wasm.sh` (step 2) to fix this.
+> the API functions. Use `build_wasm.sh` to re-link with full exports.
 
 ### Step 2 – Re-link with exported functions (required)
 
@@ -181,167 +172,120 @@ bash build_wasm.sh          # debug WASM
 bash build_wasm.sh release  # release WASM
 ```
 
-**Output:**
-```
-_build/wasm-gc/release/build/cmd/main/main.wasm   ← used by main.html
-_build/wasm-gc/debug/build/cmd/main/main.wasm     ← fallback
-```
-
 ### Step 3 – Run the tests
 
 ```bash
-moon test                     # all targets
-moon test --target wasm-gc    # wasm-gc only
-moon test --target wasm       # wasm (Wasmtime) only
-```
-
-### Step 4 – Run benchmarks (optional)
-
-```bash
-moon bench
+moon test --target wasm
 ```
 
 ---
 
 ## How to Use – Local Run + Browser Viewer
 
-Run both solvers locally and view results in `local_viewer.html`.
-
 ### Step 1 – Configure the run (optional)
 
-Edit the constants at the top of `cmd/main/main.mbt` before running:
+Edit the constants at the top of `cmd/main/main.mbt`:
 
 | Constant | Default | Description |
 |---|---|---|
-| `timing_enabled` | `true` | Master switch for timing output |
-| `time_chorin_phase` | `true` | Per-phase timing for Chorin |
-| `time_simple_phase` | `true` | Per-phase timing for SIMPLE |
-| `run_chorin` | `true` | Whether to run the Chorin solver |
-| `local_nt` | `nt` (500) | Number of Chorin time steps |
-| `run_simple` | `true` | Whether to run the SIMPLE solver |
-| `local_simple_n` | `100` | Number of SIMPLE iterations |
+| `timing_enabled` | `true` | Master timing switch |
+| `run_chorin` | `true` | Run Chorin solver |
+| `local_nt` | `nt` (500) | Chorin time steps |
+| `run_simple` | `true` | Run SIMPLE solver |
+| `local_simple_n` | `100` | SIMPLE iterations |
+| `run_pcg` | `true` | Run Chorin-PCG solver |
+| `local_pcg_nt` | `nt` (500) | PCG time steps |
+| `run_mac` | `true` | Run MAC solver |
+| `local_mac_nt` | `nt` (500) | MAC time steps |
 
 ### Step 2 – Run the simulation locally
 
 ```bash
-bash run_local.sh                  # → results.json (both solvers, 1681 + 1681 grid points)
+bash run_local.sh                  # → results.json (all four solvers)
 bash run_local.sh my_results.json  # → custom filename
 ```
 
-The script runs `moon run cmd/main --target wasm`, extracts the JSON block
-between `===JSON_DATA_START===` / `===JSON_DATA_END===` markers, and writes it
-to the output file. Timing lines (`[Timing] …`) are printed to the terminal but
-not included in the JSON.
-
 ### Step 3 – Open the local viewer
 
-Open `cmd/main/local_viewer.html` directly in a browser (no HTTP server needed —
-it uses `FileReader`, not `fetch()`).
+Open `cmd/main/local_viewer.html` in a browser.
 
 ### Step 4 – Load results
 
-- **Drag & drop** `results.json` onto the page, or click the drop zone to browse.
-- Or click **Paste JSON from clipboard**.
-
-When the JSON contains both `grid` and `simple_grid` keys, the viewer shows
-**Chorin / SIMPLE** tab buttons. Click a tab to switch the displayed solver's
-velocity and pressure fields. The Timing panel shows per-phase milliseconds for
-both solvers.
+Drag & drop `results.json` onto the page. Solver tabs **Chorin / SIMPLE / PCG / MAC**
+appear when the JSON contains multiple solvers. Clicking a tab switches all plots
+and statistics to that solver. For MAC, the grid size shown is 40×40 (cell centres).
 
 ---
 
-## How to Use – WASM in Browser (Interactive)
+## Solver Algorithms
 
-### Serving the page
+### Chorin Projection Method (1968)
 
-```bash
-python -m http.server 8080
-```
+Explicit fractional-step time-marching:
+1. Solve momentum equations explicitly for intermediate velocity u*
+2. Solve pressure Poisson equation: ∇²p = ρ/dt · div(u*)  (Gauss-Seidel, `nit` iterations)
+3. Correct velocity: u = u* − (dt/ρ) · ∇p
+4. Apply boundary conditions
 
-Then open:
+### SIMPLE (Patankar & Spalding 1972)
 
-```
-http://localhost:8080/cmd/main/main.html
-```
+Steady-state pressure-correction iteration with under-relaxation:
+1. Momentum predictor (explicit, under-relaxation α_u = 0.7)
+2. Build pressure-correction source: b = −∇·u*
+3. Solve ∇²p' = b (Gauss-Seidel, 50 inner iterations)
+4. Update: p ← p* + α_p · p'  (α_p = 0.3); u/v corrected
 
-### Controls
+### Chorin-PCG
 
-| Action | Button / Key |
-|---|---|
-| Load WebAssembly module | **Load WASM** button |
-| Run full simulation (500 steps, progressive) | **Run Full Simulation** / `F` |
-| Run quick test (50 steps) | **Quick Test** / `Q` |
-| Clear canvases | **Clear** / `C` |
-| Download grid data as JSON | **Download Data** / `D` |
+Same fractional-step structure as Chorin but the pressure Poisson solve uses
+**Preconditioned Conjugate Gradient** (PCG) with Jacobi preconditioner instead
+of Gauss-Seidel:
+- Matrix-free 5-point Laplacian (`laplacian_apply`)
+- Jacobi preconditioner: M⁻¹r = r / (2/dx² + 2/dy²)
+- Tolerance: 1×10⁻⁶, max iterations: 200
+- Boundary conditions: Dirichlet p=0 at top, Neumann elsewhere
 
-### Troubleshooting
+### MAC Staggered Grid (Harlow & Welch 1965)
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| "WASM file not found" | Build not run or wrong serve root | Run `bash build_wasm.sh release` then serve from project root |
-| Canvases show mock rainbow patterns | WASM loaded but `init_simulation` not found | Rebuild with `build_wasm.sh` |
-| Blank page / console error about `0x77` | Browser too old | Use Chrome 115+ or Edge 115+ |
-| "Failed to load WebAssembly module" | CORS / file:// protocol | Must serve over HTTP, not file:// |
+Staggered arrangement with PCG pressure solve:
+- **p** at cell centres — mac_nc × mac_nc (40×40)
+- **u** at x-face centres — mac_nc × (mac_nc+1)
+- **v** at y-face centres — (mac_nc+1) × mac_nc
+- Ghost-cell BCs: top lid u = 2·U_lid − u[ny-1][j] (linear interpolation), no-slip on other walls
+- Divergence-free guarantee: PCG-interior cells (i,j = 1..38) have exact ∇·u = 0 by construction
 
 ---
 
-## SIMPLE Algorithm
+## WASM Exports (62 functions)
 
-### Background
+**Chorin solver (27):**
+`init_simulation`, `run_all_steps`, `run_n_steps`,
+`get_nx`, `get_ny`, `get_nt`, `get_nit`, `get_re`, `get_dx`, `get_dy`, `get_dt`, `get_rho`, `get_nu`,
+`get_step_count`, `get_u_at`, `get_v_at`, `get_p_at`,
+`get_velocity_magnitude_at`, `get_max_velocity_magnitude`,
+`get_u_center`, `get_v_center`, `get_p_center`,
+`get_divergence_norm`, `get_max_u`, `get_max_v`, `get_max_p`, `get_min_p`
 
-The **SIMPLE** (Semi-Implicit Method for Pressure-Linked Equations, Patankar & Spalding, 1972)
-algorithm solves the steady incompressible Navier-Stokes equations iteratively.
-Unlike the Chorin projection method (which time-marches to equilibrium), SIMPLE
-uses a pressure-correction loop with under-relaxation to converge directly to
-the steady state.
+**SIMPLE solver (11):**
+`init_simple`, `run_simple_n_iter`,
+`get_simple_step_count`, `get_simple_residual`,
+`get_u_simple_at`, `get_v_simple_at`, `get_p_simple_at`,
+`get_max_u_simple`, `get_simple_divergence_norm`
 
-### Algorithm (per iteration)
+**Chorin-PCG collocated solver (13):**
+`init_chorin_pcg`, `run_chorin_pcg_n_steps`,
+`get_pcg_step_count`, `get_pcg_last_iters`,
+`get_u_pcg_at`, `get_v_pcg_at`, `get_p_pcg_at`,
+`get_velocity_magnitude_pcg_at`, `get_max_u_pcg`, `get_max_v_pcg`,
+`get_max_p_pcg`, `get_min_p_pcg`, `get_pcg_divergence_norm`
 
-```
-1. Momentum predictor
-   Solve u*, v* explicitly using current pressure p*:
-     u* = u - (convection) - (1/ρ)·∂p*/∂x + ν∇²u    (with α_u = 0.7 under-relaxation)
-     v* = v - (convection) - (1/ρ)·∂p*/∂y + ν∇²v
-
-2. Pressure-correction source
-   b[i,j] = ρ/dt · (∂u*/∂x + ∂v*/∂y)   (same form as Chorin pressure RHS)
-
-3. Pressure-correction Poisson solve
-   ∇²p' = b    (Gauss-Seidel, 50 inner iterations)
-
-4. Field update
-   p  ← p* + α_p · p'          (α_p = 0.3)
-   u  ← u* − (dt/ρ)·∂p'/∂x
-   v  ← v* − (dt/ρ)·∂p'/∂y
-
-5. Boundary conditions
-   Lid: u[top,:] = 1,  walls: u=v=0
-   Pressure: Neumann on walls, p=0 at top
-
-6. Convergence check: residual = mean|∂u/∂x + ∂v/∂y|
-```
-
-### Parameters
-
-| Parameter | Value | Purpose |
-|---|---|---|
-| `simple_alpha_p` | 0.3 | Pressure under-relaxation (stabilises p-correction) |
-| `simple_alpha_u` | 0.7 | Velocity under-relaxation (prevents oscillation) |
-| Inner iterations | 50 (nit) | Gauss-Seidel sweeps per pressure solve |
-
-### WASM API (11 new exports)
-
-| Function | Description |
-|---|---|
-| `init_simple()` | Reset SIMPLE state (u_s, v_s, p_s = 0, counter = 0) |
-| `run_simple_n_iter(n)` | Advance by n SIMPLE iterations |
-| `get_simple_step_count()` | Number of iterations completed |
-| `get_simple_residual()` | Last cached ‖div u‖ residual |
-| `get_u_simple_at(i,j)` | u-velocity at grid point (i,j) |
-| `get_v_simple_at(i,j)` | v-velocity at grid point (i,j) |
-| `get_p_simple_at(i,j)` | pressure at grid point (i,j) |
-| `get_max_u_simple()` | Maximum \|u\| in SIMPLE field |
-| `get_simple_divergence_norm()` | Mean \|∂u/∂x + ∂v/∂y\| over interior |
+**MAC staggered solver (14):**
+`init_mac`, `run_mac_n_steps`,
+`get_mac_step_count`, `get_mac_last_iters`, `get_mac_nc`,
+`get_u_mac_at`, `get_v_mac_at`, `get_p_mac_at`,
+`get_velocity_magnitude_mac_at`,
+`get_max_u_mac`, `get_max_v_mac`, `get_max_p_mac`, `get_min_p_mac`,
+`get_mac_divergence_norm`
 
 ---
 
@@ -350,65 +294,95 @@ the steady state.
 ### Running tests
 
 ```bash
-moon test --target wasm      # all 26 tests on wasm target
-moon test                    # all targets
+moon test --target wasm      # 42 tests on wasm target
 ```
 
-### Test summary (26 tests, all passing)
+### Test summary (42 tests, all passing)
 
-#### Chorin solver tests (1–16)
+#### Chorin solver (T1–T16)
 
-| # | Test name | Category | Validates |
-|---|---|---|---|
-| 1 | `create_zeros_2d` | Array utility | Correct dimensions and all-zero init |
-| 2 | `copy_2d_array` | Array utility | Deep copy, source independence |
-| 3 | `generate_mesh_grid` | Mesh | Coordinate range [0,2]×[0,2], monotonicity |
-| 4 | `init_simulation_resets_state` | State mgmt | Global arrays zeroed, step counter reset |
-| 5 | `boundary_conditions_after_run` | Solver | Lid u=1, no-slip walls after 10 steps |
-| 6 | `step_counter` | State mgmt | Increments correctly across multiple run_n_steps |
-| 7 | `out_of_range_returns_zero` | Safety | get_*_at returns 0 for out-of-bounds indices |
-| 8 | `constant_accessors` | API | nx=41, ny=41, Re=20, rho=1, nu=0.1, dt=0.001 |
-| 9 | `velocity_magnitude_consistency` | Solver | get_velocity_magnitude_at = sqrt(u²+v²) |
-| 10 | `max_velocity_magnitude_bounds` | Solver | max_mag >= 0, max_mag >= max_u |
-| 11 | `pressure_bounded` | Solver | Pressure finite within ±1000 after 50 steps |
-| 12 | `center_getters_consistent` | API | get_u/v/p_center = get_*_at(ny/2, nx/2) |
-| 13 | `divergence_norm_nonnegative` | Solver | Mean \|div u\| >= 0 |
-| 14 | `build_up_b_nonzero` | Solver | Pressure source term non-trivial with lid velocity |
-| 15 | `full_simulation_produces_vortex` | Physics | After 500 steps: negative u at centre, max_u >= 1 |
-| 16 | `pressure_boundary_dp_zero` | Physics | dp/dy=0 at y=0, p=0 at y=2 |
+| # | Test name | Validates |
+|---|---|---|
+| 1 | `create_zeros_2d` | Array utility: correct dimensions, all-zero init |
+| 2 | `copy_2d_array` | Deep copy, source independence |
+| 3 | `generate_mesh_grid` | Coordinate range [0,2]×[0,2], monotonicity |
+| 4 | `init_simulation_resets_state` | Global arrays zeroed, step counter reset |
+| 5 | `boundary_conditions_after_run` | Lid u=1, no-slip walls after 10 steps |
+| 6 | `step_counter` | Counter increments across multiple run_n_steps calls |
+| 7 | `out_of_range_returns_zero` | get_*_at returns 0 for out-of-bounds indices |
+| 8 | `constant_accessors` | nx=41, ny=41, Re=20, rho=1, nu=0.1, dt=0.001 |
+| 9 | `velocity_magnitude_consistency` | get_velocity_magnitude_at = sqrt(u²+v²) |
+| 10 | `max_velocity_magnitude_bounds` | max_mag >= 0, max_mag >= max_u |
+| 11 | `pressure_bounded` | Pressure finite within ±1000 after 50 steps |
+| 12 | `center_getters_consistent` | get_u/v/p_center = get_*_at(ny/2, nx/2) |
+| 13 | `divergence_norm_nonnegative` | Mean \|div u\| >= 0 |
+| 14 | `build_up_b_nonzero` | Pressure source term non-trivial with lid velocity |
+| 15 | `full_simulation_produces_vortex` | After 500 steps: negative u at centre, max_u >= 1 |
+| 16 | `pressure_boundary_dp_zero` | dp/dy=0 at y=0, p=0 at y=2 |
 
-#### SIMPLE solver tests (17–26)
+#### SIMPLE solver (T17–T26)
 
-| # | Test name | Category | Validates |
-|---|---|---|---|
-| 17 | `simple_init_resets_state` | State mgmt | All SIMPLE fields zeroed, counter reset |
-| 18 | `simple_step_counter` | State mgmt | Counter increments correctly across batches |
-| 19 | `simple_boundary_conditions` | Solver | Lid u=1, no-slip walls u=v=0, v=0 at top after 20 iters |
-| 20 | `simple_out_of_range_returns_zero` | Safety | get_*_simple_at returns 0 for out-of-bounds |
-| 21 | `simple_residual_nonnegative` | Solver | get_simple_residual() >= 0, divergence_norm >= 0 |
-| 22 | `simple_produces_flow` | Physics | Non-zero interior u, v after 50 iterations |
-| 23 | `simple_max_u_bounds` | Solver | 0 <= max_u_simple <= 2 (under-relaxation keeps field bounded) |
-| 24 | `simple_pressure_boundary` | Physics | p=0 at top, p[0,:]=p[1,:] at bottom (Neumann) |
-| 25 | `simple_vs_chorin_qualitative` | Physics | Both solvers show negative u at centre (backflow) after 200 iters |
-| 26 | `simple_independent_of_chorin` | Isolation | SIMPLE iterations do not modify Chorin global state |
+| # | Test name | Validates |
+|---|---|---|
+| 17 | `simple_init_resets_state` | All SIMPLE fields zeroed, counter reset |
+| 18 | `simple_step_counter` | Counter increments correctly across batches |
+| 19 | `simple_boundary_conditions` | Lid u=1, no-slip walls, v=0 at top after 20 iters |
+| 20 | `simple_out_of_range_returns_zero` | get_*_simple_at returns 0 for out-of-bounds |
+| 21 | `simple_residual_nonnegative` | get_simple_residual() >= 0, divergence_norm >= 0 |
+| 22 | `simple_produces_flow` | Non-zero interior u, v after 50 iterations |
+| 23 | `simple_max_u_bounds` | 0 <= max_u_simple <= 2 (under-relaxation bounds field) |
+| 24 | `simple_pressure_boundary` | p=0 at top; p[0,:]=p[1,:] (Neumann at bottom) |
+| 25 | `simple_vs_chorin_qualitative` | Both solvers show negative u at centre after 200 iters |
+| 26 | `simple_independent_of_chorin` | SIMPLE iterations do not modify Chorin global state |
+
+#### Chorin-PCG solver (T27–T34)
+
+| # | Test name | Validates |
+|---|---|---|
+| 27 | `pcg_init_resets_state` | PCG fields zeroed, step counter reset |
+| 28 | `pcg_step_counter` | Counter increments with run_chorin_pcg_n_steps |
+| 29 | `pcg_boundary_conditions` | Lid u=1, no-slip walls (side walls only, not lid row) |
+| 30 | `pcg_out_of_range_returns_zero` | get_*_pcg_at returns 0 for out-of-bounds |
+| 31 | `pcg_divergence_nonnegative` | get_pcg_divergence_norm() >= 0 |
+| 32 | `pcg_divergence_near_zero` | After 50 steps, divergence norm < 1×10⁻⁴ |
+| 33 | `pcg_produces_flow` | Non-zero interior velocity after 10 steps |
+| 34 | `pcg_vortex_formation` | After 200 steps: negative u at centre (backflow vortex) |
+
+#### MAC staggered solver (T35–T42)
+
+| # | Test name | Validates |
+|---|---|---|
+| 35 | `mac_grid_size` | get_mac_nc() = mac_nc = nx-1 = 40 |
+| 36 | `mac_pressure_bc` | Dirichlet p=0 at top row (i = mac_nc-1) |
+| 37 | `mac_step_counter` | Counter increments with run_mac_n_steps |
+| 38 | `mac_out_of_range_returns_zero` | get_*_mac_at returns 0 for out-of-bounds |
+| 39 | `mac_boundary_u` | No-slip: u=0 at left/right walls; lid: u = U_lid at top ghost |
+| 40 | `mac_boundary_v` | No-slip: v=0 at bottom wall and left/right walls |
+| 41 | `mac_divergence_near_zero` | After 50 steps, divergence norm (interior cells) < 1×10⁻⁴ |
+| 42 | `mac_vortex_formation` | After 200 steps: negative u at centre; divergence < 1×10⁻⁴ |
 
 ### Physical validation
 
 **Chorin solver (Re = 20, 500 time steps):**
-
-- Centre u-velocity ≈ −0.06 (negative = backflow, confirms clockwise primary vortex)
+- Centre u-velocity ≈ −0.06 (backflow confirms clockwise primary vortex)
 - Max u-velocity ≥ 1.0 (lid velocity maintained)
-- Pressure Neumann BC at walls and Dirichlet p=0 at top satisfied
-- Mean divergence norm decreases to O(10⁻²)
+- Divergence norm decreases to O(10⁻²)
 
-**SIMPLE solver (Re = 20, 200–500 iterations):**
+**SIMPLE solver (Re = 20):**
+- Negative u at centre after 200 iterations confirms vortex
+- Residual ‖div u‖ non-negative and decreasing
+- Under-relaxation keeps max \|u\| bounded within [0, 2]
 
-- Interior velocities are non-zero after 50 iterations (lid-driven flow established)
-- Both u and v are non-trivial in interior cells
-- Negative u at centre after 200 iterations confirms vortex formation
-- Pressure boundary conditions (p=0 at top, Neumann at walls) satisfied at each iteration
-- Convergence residual ‖div u‖ is non-negative and decreases with iterations
-- Under-relaxation keeps max \|u\| bounded within [0, 2] (lid = 1, alpha_u = 0.7)
+**Chorin-PCG solver (Re = 20):**
+- PCG pressure convergence < 1×10⁻⁶ in typically 50–130 iterations per step
+- Interior divergence norm < 1×10⁻⁴ after 50 steps
+- Vortex structure (negative u at centre) confirmed after 200 steps
+
+**MAC staggered solver (Re = 20):**
+- PCG-interior cells (i,j = 1..38) guaranteed divergence-free by construction
+- Divergence norm < 1×10⁻⁴ after 50 steps
+- Vortex confirmed after 200 steps
+- PCG iteration count decreases as flow reaches quasi-steady state (~120 → ~50 iters/step)
 
 ---
 
@@ -416,16 +390,19 @@ moon test                    # all targets
 
 | Parameter | Value | Description |
 |---|---|---|
-| `nx`, `ny` | 41 × 41 | Grid points in x and y |
-| `nt` | 500 | Total Chorin time steps |
-| `nit` | 50 | Pressure-Poisson inner iterations per step/SIMPLE iter |
+| `nx`, `ny` | 41 × 41 | Grid nodes in x and y (Chorin / SIMPLE / PCG) |
+| `mac_nc` | 40 | MAC cell count per direction (= nx − 1) |
+| `nt` | 500 | Chorin / PCG / MAC time steps |
+| `nit` | 50 | Pressure-Poisson inner iterations (Chorin / SIMPLE) |
 | `dx`, `dy` | 0.05 | Grid spacing (domain = 2 × 2) |
-| `dt` | 0.001 | Time step (Chorin) / pseudo-time step (SIMPLE) |
+| `dt` | 0.001 | Time step |
 | `rho` | 1.0 | Fluid density |
 | `nu` | 0.1 | Kinematic viscosity |
 | Re | 20 | Reynolds number (u_lid × L / nu = 1 × 2 / 0.1) |
 | `simple_alpha_p` | 0.3 | SIMPLE pressure under-relaxation factor |
 | `simple_alpha_u` | 0.7 | SIMPLE velocity under-relaxation factor |
+| `pcg_tol` | 1×10⁻⁶ | PCG convergence tolerance |
+| `pcg_max_iter` | 200 | PCG maximum iterations per step |
 
 ---
 
