@@ -179,7 +179,7 @@
     /* canvas fills its panel width, square via aspect-ratio + visible bg padding */
     .canvas-wrapper {
       width: 100%;
-      padding: 5px;          /* bg colour shows as frame around the canvas */
+      padding: 10px;         /* bg colour shows as frame around the canvas */
       border-radius: 8px;
       background: #1a1a2e;   /* default dark */
     }
@@ -432,6 +432,7 @@
   <button class="btn" id="btnCsv">⬇ CSV</button>
 
   <div class="tsep"></div>
+  <button class="btn" id="btnHelp" onclick="showHelp()">? Help</button>
   <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Full</button>
 </div>
 
@@ -857,11 +858,16 @@ function loadJSON(text) {
     const hasDual = Array.isArray(data.simple_grid) && data.simple_grid.length > 0;
     document.getElementById('solverBar').style.display  = hasDual ? 'flex' : 'none';
     document.getElementById('solverSep').style.display  = hasDual ? ''     : 'none';
-    document.getElementById('headerSolverSwitch').style.display = hasDual ? 'flex' : 'none';
+    // Header solver switch: always show when data loaded; disable SIMPLE for single-solver JSON
+    document.getElementById('headerSolverSwitch').style.display = 'flex';
     document.getElementById('btnChorin').className  = 'btn active';
     document.getElementById('btnSimple').className  = 'btn';
     document.getElementById('hBtnChorin').className = 'btn active';
     document.getElementById('hBtnSimple').className = 'btn';
+    document.getElementById('hBtnSimple').disabled  = !hasDual;
+    document.getElementById('hBtnSimple').title = hasDual
+      ? 'Switch to SIMPLE solver view'
+      : 'No SIMPLE data in this JSON — regenerate with run_local.sh';
     document.getElementById('velActiveLbl').textContent  = '(Chorin – transient)';
     document.getElementById('presActiveLbl').textContent = '(Chorin – transient)';
     document.getElementById('sResRow').style.display = 'none';
@@ -1102,11 +1108,12 @@ function drawVelocityField() {
       py - pt.v * arrowScale * playScale);
   });
 
-  // Isolines overlay — use scaled min/max so contours track the animation
+  // Isolines overlay — levels use full-range; data values are scaled by playT so
+  // contours animate (sweep toward final positions) instead of staying fixed.
   if (DS.velContours) {
     const col = DS.contourColor === 'auto' ? arrowColor() : DS.contourColor;
     drawContours(velCtx, activeGrid(), nx, ny, w, h,
-      DS.contourN, minMag * playScale, maxMag * playScale,
+      DS.contourN, minMag, maxMag,
       pt => pt.magnitude * playScale, col);
   }
 
@@ -1161,11 +1168,12 @@ function drawPressureField() {
   }
   presCtx.putImageData(img, 0, 0);
 
-  // Isolines overlay — scaled so contours track the animation
+  // Isolines overlay — levels use full-range; data values are scaled by playT so
+  // contours animate toward final positions instead of being fixed.
   if (DS.presContours) {
     const col = DS.contourColor === 'auto' ? arrowColor() : DS.contourColor;
     drawContours(presCtx, activeGrid(), nx, ny, w, h,
-      DS.contourN, minP * playScaleP, maxP * playScaleP,
+      DS.contourN, minP, maxP,
       pt => (pt.p || 0) * playScaleP, col);
   }
 
@@ -1645,6 +1653,7 @@ function clearAll() {
   document.getElementById('solverSep').style.display       = 'none';
   document.getElementById('secTiming').style.display       = 'none';
   document.getElementById('headerSolverSwitch').style.display = 'none';
+  document.getElementById('hBtnSimple').disabled = false;
   document.getElementById('headerDot').className = 'dot idle';
   document.getElementById('headerMsg').textContent = 'No data';
   [
