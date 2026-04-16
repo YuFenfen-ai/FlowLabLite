@@ -402,14 +402,19 @@
   <div class="tsep"></div>
 
   <!-- u/v component plots toggle -->
-  <label class="tlabel" style="cursor:pointer;display:flex;align-items:center;gap:4px">
+  <label class="tlabel" style="cursor:pointer;display:flex;align-items:center;gap:4px"
+    title="Show separate u (x) and v (y) velocity component maps below the main plots">
     <input type="checkbox" id="showUVChk" onchange="toggleUVGrid()"> u/v fields
   </label>
 
   <div class="tsep"></div>
+  <button class="btn" id="btnHelp" onclick="showHelp()" title="Usage guide and developer info">? Help</button>
+  <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Full</button>
 
-  <!-- Export group -->
-  <span class="tlabel">Export:</span>
+  <div class="tsep"></div>
+
+  <!-- Export group — intentionally last so it doesn't crowd Fullscreen -->
+  <span class="tlabel" style="color:#64748b">Export:</span>
   <select id="exportField"
     style="padding:4px 6px;background:var(--c-surface2);border:1px solid var(--c-border);
            border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
@@ -430,10 +435,6 @@
            border-radius:5px;color:var(--c-text);font-size:12px;outline:none">
   <button class="btn primary" id="btnExport">⬇ Img</button>
   <button class="btn" id="btnCsv">⬇ CSV</button>
-
-  <div class="tsep"></div>
-  <button class="btn" id="btnHelp" onclick="showHelp()">? Help</button>
-  <button class="btn" id="btnFs" title="Fullscreen visualization area">⛶ Full</button>
 </div>
 
 <!-- ═══ MAIN ══════════════════════════════════════════════════════════════════ -->
@@ -481,12 +482,13 @@
           </div>
         </div>
         <!-- Arrow vector legend -->
-        <div style="margin-top:4px">
-          <div style="font-size:10px;color:var(--c-muted);margin-bottom:3px">
-            Vector arrow scale (length ∝ speed):
+        <div style="margin-top:6px;border:1px solid var(--c-border);border-radius:6px;padding:6px 8px;background:var(--c-surface2)">
+          <div style="font-size:10px;color:var(--c-muted);margin-bottom:4px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase">
+            Arrow length legend (length ∝ speed)
           </div>
           <canvas id="arrowLegendCanvas" height="44"
-            style="width:100%;display:block;border-radius:3px;background:transparent"></canvas>
+            style="width:100%;display:block;border-radius:3px;background:transparent"
+            title="Each arrow on the velocity map has length proportional to the local flow speed. These reference arrows show the scale."></canvas>
         </div>
       </div>
 
@@ -521,7 +523,10 @@
 
     </div><!-- /canvas-grid -->
 
-    <!-- u / v component panels (second row, hidden until data loaded) -->
+    <!-- u / v component panels (second row, toggled via "u/v fields" checkbox) -->
+    <div style="display:none;padding:4px 0 2px;font-size:11px;color:var(--c-muted)" id="uvLabel">
+      u/v component fields — diverging colormap: blue = negative · white = zero · red = positive
+    </div>
     <div class="canvas-grid" id="uvGrid" style="display:none">
 
       <!-- u velocity -->
@@ -904,7 +909,8 @@ function loadJSON(text) {
     document.getElementById('canvasGrid').style.display = '';
     // u/v grid shown only if checkbox is checked
     const uvVisible = document.getElementById('showUVChk').checked;
-    document.getElementById('uvGrid').style.display = uvVisible ? '' : 'none';
+    document.getElementById('uvGrid').style.display  = uvVisible ? '' : 'none';
+    document.getElementById('uvLabel').style.display = uvVisible ? '' : 'none';
     // sync u/v wrapper bg
     document.getElementById('uWrapper').className = 'canvas-wrapper ' + DS.bgClass;
     document.getElementById('vWrapper').className = 'canvas-wrapper ' + DS.bgClass;
@@ -1117,13 +1123,14 @@ function drawVelocityField() {
       pt => pt.magnitude * playScale, col);
   }
 
-  // Border & label
+  // Border & label (font size adapts to canvas resolution)
   velCtx.strokeStyle = arrowColor();
   velCtx.lineWidth = 2;
   velCtx.strokeRect(1, 1, w - 2, h - 2);
   velCtx.fillStyle = labelColor();
-  velCtx.font = '11px monospace';
-  velCtx.fillText('Moving Lid  u = 1.0 →', 8, 16);
+  const labelFontPx = Math.max(9, Math.round(w / 45));
+  velCtx.font = `${labelFontPx}px monospace`;
+  velCtx.fillText('Moving Lid  u = 1.0 \u2192', 8, labelFontPx + 5);
 }
 
 function drawPressureField() {
@@ -1504,10 +1511,9 @@ const vCtx     = vCanvas.getContext('2d');
 
 window.toggleUVGrid = function () {
   const show = document.getElementById('showUVChk').checked;
-  if (currentData) {
-    document.getElementById('uvGrid').style.display = show ? '' : 'none';
-    if (show) { drawUField(); drawVField(); }
-  }
+  document.getElementById('uvGrid').style.display  = (show && currentData) ? '' : 'none';
+  document.getElementById('uvLabel').style.display = (show && currentData) ? '' : 'none';
+  if (show && currentData) { drawUField(); drawVField(); }
 };
 
 // Diverging colormap: blue (neg) → white (zero) → red (pos), t ∈ [0,1], mid=0.5
@@ -1649,6 +1655,7 @@ function clearAll() {
   document.getElementById('dropZone').style.display        = '';
   document.getElementById('canvasGrid').style.display      = 'none';
   document.getElementById('uvGrid').style.display          = 'none';
+  document.getElementById('uvLabel').style.display         = 'none';
   document.getElementById('solverBar').style.display       = 'none';
   document.getElementById('solverSep').style.display       = 'none';
   document.getElementById('secTiming').style.display       = 'none';
