@@ -35,7 +35,7 @@
         header {
             background: var(--c-surface);
             border-bottom: 1px solid var(--c-border);
-            padding: 10px 20px;
+            padding: 8px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -44,14 +44,14 @@
         }
         .header-brand { display: flex; align-items: center; gap: 10px; }
         .brand-icon {
-            width: 32px; height: 32px;
+            width: 30px; height: 30px;
             background: var(--c-accent);
-            border-radius: 8px;
+            border-radius: 7px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 16px;
+            font-size: 15px;
         }
         .header-title {
-            font-size: 15px; font-weight: 700;
+            font-size: 14px; font-weight: 700;
             background: linear-gradient(90deg, #3b82f6, #06b6d4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -69,47 +69,74 @@
         .dot {
             width: 7px; height: 7px; border-radius: 50%;
             background: var(--c-success);
-            box-shadow: 0 0 5px var(--c-success);
         }
-        .dot.idle    { background: var(--c-muted); box-shadow: none; }
-        .dot.loading { background: #f59e0b; box-shadow: 0 0 5px #f59e0b;
-                       animation: pulse 1s infinite alternate; }
-        .dot.error   { background: var(--c-danger); box-shadow: 0 0 5px var(--c-danger); }
-        @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+        .dot.idle    { background: var(--c-muted); }
+        .dot.loading { background: #f59e0b; animation: pulse 0.9s infinite alternate; }
+        .dot.error   { background: var(--c-danger); }
+        @keyframes pulse { from { opacity: 1; } to { opacity: 0.25; } }
 
         /* ── Toolbar ── */
         .toolbar {
             background: var(--c-surface);
             border-bottom: 1px solid var(--c-border);
-            padding: 7px 16px;
+            padding: 6px 14px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             flex-wrap: wrap;
             flex-shrink: 0;
         }
-        .tsep { width: 1px; height: 22px; background: var(--c-border); }
+        .tsep { width: 1px; height: 20px; background: var(--c-border); margin: 0 2px; }
         .tlabel { font-size: 11px; color: var(--c-muted); white-space: nowrap; }
 
         /* buttons */
         .btn {
-            padding: 5px 12px;
+            padding: 4px 10px;
             border: 1px solid var(--c-border);
-            border-radius: 6px;
+            border-radius: 5px;
             cursor: pointer;
             font-size: 12px;
             background: var(--c-surface2);
             color: var(--c-text);
-            transition: background 0.15s, border-color 0.15s;
+            transition: background 0.15s;
             white-space: nowrap;
             outline: none;
         }
-        .btn:hover { background: #3b4a63; }
+        .btn:hover:not(:disabled) { background: #3b4a63; }
         .btn.primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
-        .btn.primary:hover { background: #2563eb; }
+        .btn.primary:hover:not(:disabled) { background: #2563eb; }
         .btn.active  { background: #0e7490; border-color: #06b6d4; color: #fff; }
-        .btn.active:hover { background: #0891b2; }
-        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn.active:hover:not(:disabled) { background: #0891b2; }
+        .btn.danger  { background: #7f1d1d; border-color: #dc2626; color: #fca5a5; }
+        .btn.danger:hover:not(:disabled) { background: #991b1b; }
+        .btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
+        /* btn-group: solver tabs */
+        .btn-group { display: flex; }
+        .btn-group .btn { border-radius: 0; border-right-width: 0; }
+        .btn-group .btn:first-child { border-radius: 5px 0 0 5px; }
+        .btn-group .btn:last-child  { border-radius: 0 5px 5px 0; border-right-width: 1px; }
+
+        /* step count input */
+        .step-input {
+            width: 62px; padding: 3px 6px;
+            background: var(--c-surface2); border: 1px solid var(--c-border);
+            border-radius: 5px; color: var(--c-text);
+            font-size: 12px; font-family: monospace; outline: none;
+        }
+        .step-input:focus { border-color: var(--c-accent); }
+
+        /* progress bar */
+        .progress-wrap {
+            flex: 1; min-width: 80px; max-width: 180px;
+            height: 6px; background: var(--c-surface2);
+            border-radius: 3px; overflow: hidden;
+            border: 1px solid var(--c-border);
+        }
+        .progress-bar {
+            height: 100%; width: 0%; background: var(--c-accent);
+            border-radius: 3px; transition: width 0.1s;
+        }
 
         /* ── Main layout ── */
         .main {
@@ -119,91 +146,110 @@
             min-height: 0;
         }
 
-        /* ── Left: visualization area ── */
+        /* ── Visualization area ── */
         .viz-area {
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 14px;
+            padding: 12px;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 12px;
             min-width: 0;
         }
 
-        /* 2-column canvas grid */
+        /* canvas panels row */
         .canvas-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 14px;
+            gap: 12px;
         }
 
         .canvas-panel {
             background: var(--c-surface);
             border: 1px solid var(--c-border);
-            border-radius: 10px;
-            padding: 12px;
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .canvas-panel-title {
+            font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            color: var(--c-muted);
+        }
+
+        .canvas-wrapper {
+            width: 100%; padding: 6px;
+            border-radius: 6px; background: #1a1a2e;
+        }
+        .canvas-wrapper canvas {
+            display: block; width: 100%;
+            aspect-ratio: 1 / 1; border-radius: 3px;
+        }
+
+        /* horizontal colorbar */
+        .colorbar-strip { display: flex; align-items: center; gap: 6px; }
+        .colorbar-bar {
+            flex: 1; height: 11px; border-radius: 3px;
+            border: 1px solid var(--c-border);
+        }
+        .cb-label { font-size: 10px; font-family: monospace; color: var(--c-muted); min-width: 56px; }
+        .cb-label.right { text-align: right; }
+
+        /* ── Convergence chart panel ── */
+        .chart-panel {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .chart-header {
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .chart-title {
+            font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            color: var(--c-muted);
+        }
+        .chart-legend {
+            display: flex; gap: 14px; font-size: 10px; color: var(--c-muted);
+        }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-dot  { width: 10px; height: 3px; border-radius: 2px; }
+
+        #convergenceCanvas {
+            display: block; width: 100%; height: 160px;
+            border-radius: 4px;
+        }
+
+        /* ── Right control panel ── */
+        .control-panel {
+            width: 268px;
+            flex-shrink: 0;
+            background: var(--c-surface);
+            border-left: 1px solid var(--c-border);
+            overflow-y: auto;
+            padding: 10px;
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
 
-        .canvas-panel-title {
-            font-size: 11px; font-weight: 700;
-            text-transform: uppercase; letter-spacing: 0.06em;
-            color: var(--c-muted);
-            display: flex; align-items: center; justify-content: space-between;
-        }
-
-        .canvas-wrapper {
-            width: 100%;
-            padding: 8px;
-            border-radius: 8px;
-            background: #1a1a2e;
-        }
-        .canvas-wrapper canvas {
-            display: block;
-            width: 100%;
-            aspect-ratio: 1 / 1;
-            border-radius: 4px;
-        }
-
-        /* Horizontal colorbar */
-        .colorbar-row { display: flex; flex-direction: column; gap: 4px; }
-        .colorbar-strip { display: flex; align-items: center; gap: 8px; }
-        .colorbar-bar {
-            flex: 1; height: 13px;
-            border-radius: 3px;
-            border: 1px solid var(--c-border);
-        }
-        .cb-label {
-            font-size: 11px; font-family: monospace;
-            color: var(--c-muted); min-width: 62px;
-        }
-        .cb-label.right { text-align: right; }
-
-        /* ── Right: control panel ── */
-        .control-panel {
-            width: 280px;
-            flex-shrink: 0;
-            background: var(--c-surface);
-            border-left: 1px solid var(--c-border);
-            overflow-y: auto;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        /* collapsible sections */
         .cp-section {
             border: 1px solid var(--c-border);
-            border-radius: 8px;
+            border-radius: 7px;
             overflow: hidden;
         }
         .cp-head {
-            padding: 8px 12px;
-            font-size: 11px; font-weight: 700;
+            padding: 7px 10px;
+            font-size: 10px; font-weight: 700;
             text-transform: uppercase; letter-spacing: 0.07em;
             color: var(--c-muted);
             background: var(--c-surface2);
@@ -214,12 +260,12 @@
         .cp-head:hover { color: var(--c-text); }
         .cp-arrow { transition: transform 0.2s; }
         .cp-section.collapsed .cp-arrow { transform: rotate(-90deg); }
-        .cp-body { padding: 10px 12px; }
+        .cp-body { padding: 8px 10px; }
         .cp-section.collapsed .cp-body { display: none; }
 
         .prow {
             display: flex; justify-content: space-between; align-items: baseline;
-            padding: 3px 0; font-size: 12px;
+            padding: 2px 0; font-size: 11px;
             border-bottom: 1px solid rgba(255,255,255,0.04);
         }
         .prow:last-child { border-bottom: none; }
@@ -227,30 +273,27 @@
         .pv { font-family: monospace; color: var(--c-text); text-align: right; }
         .pv.hi   { color: #06b6d4; }
         .pv.warn { color: var(--c-success); }
+        .pv.dim  { color: #475569; font-size: 10px; }
 
         /* ── Status bar ── */
         .statusbar {
             background: var(--c-surface);
             border-top: 1px solid var(--c-border);
-            padding: 5px 16px;
-            display: flex; align-items: center; gap: 24px;
+            padding: 4px 14px;
+            display: flex; align-items: center; gap: 20px;
             flex-shrink: 0; flex-wrap: wrap;
         }
-        .sitem {
-            display: flex; gap: 6px; align-items: center;
-            font-size: 11px; font-family: monospace;
-        }
-        .sk { color: var(--c-muted); text-transform: uppercase; }
+        .sitem { display: flex; gap: 5px; align-items: center; font-size: 11px; font-family: monospace; }
+        .sk { color: var(--c-muted); text-transform: uppercase; font-size: 10px; }
         .sv { color: var(--c-accent); font-weight: 600; }
         .smsg { flex: 1; font-size: 11px; color: var(--c-muted); }
         .smsg.ok      { color: var(--c-success); }
         .smsg.err     { color: var(--c-danger); }
         .smsg.loading { color: #f59e0b; }
 
-        /* scrollbar */
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--c-surface2); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--c-surface2); border-radius: 2px; }
 
         @media (max-width: 900px) {
             .canvas-grid { grid-template-columns: 1fr; }
@@ -270,27 +313,51 @@
             <div class="header-sub">2D Lid-Driven Cavity Flow · MoonBit / WebAssembly</div>
         </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-        <div class="status-pill" id="headerPill">
-            <div class="dot idle" id="headerDot"></div>
-            <span id="headerMsg">Loading WASM…</span>
-        </div>
+    <div class="status-pill" id="headerPill">
+        <div class="dot idle" id="headerDot"></div>
+        <span id="headerMsg">Loading WASM…</span>
     </div>
 </header>
 
 <!-- ═══ TOOLBAR ══════════════════════════════════════════════════════════════ -->
 <div class="toolbar">
-    <button class="btn primary" id="runSimulation" title="Run all 500 time steps  [F]">▶ Run 500 Steps</button>
-    <button class="btn" id="runSimpleTest" title="Quick 50-step preview  [Q]">⚡ Quick (50)</button>
-    <button class="btn" id="clearCanvas" title="Clear canvases  [C]">✕ Clear</button>
+
+    <!-- Solver selector -->
+    <span class="tlabel">Solver:</span>
+    <div class="btn-group" id="solverGroup">
+        <button class="btn active" id="btnSolChorin" onclick="app.setSolver('chorin')">Chorin</button>
+        <button class="btn"        id="btnSolSimple" onclick="app.setSolver('simple')">SIMPLE</button>
+        <button class="btn"        id="btnSolPcg"    onclick="app.setSolver('pcg')">PCG</button>
+        <button class="btn"        id="btnSolMac"    onclick="app.setSolver('mac')">MAC</button>
+    </div>
 
     <div class="tsep"></div>
 
-    <button class="btn" id="toggleStreamlines" title="Toggle streamline overlay  [S]">〜 Streamlines</button>
+    <!-- Animation controls -->
+    <button class="btn primary" id="btnPlay"  title="Run / resume  [Space]">▶ Play</button>
+    <button class="btn"         id="btnPause" title="Pause  [Space]" disabled>⏸ Pause</button>
+    <button class="btn"         id="btnStep"  title="Single step  [→]">⏭ Step</button>
+    <button class="btn"         id="btnReset" title="Reset solver state  [R]">↺ Reset</button>
+
+    <!-- Step count -->
+    <span class="tlabel">Steps/chunk:</span>
+    <input class="step-input" type="number" id="chunkInput" value="10" min="1" max="500" title="Steps per animation frame">
+
+    <!-- Progress -->
+    <div class="progress-wrap" title="Solver progress">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <span class="tlabel" id="progressLabel" style="font-family:monospace;min-width:52px">0 / —</span>
 
     <div class="tsep"></div>
 
-    <button class="btn" id="downloadData" title="Export simulation data as CSV  [D]">⬇ CSV</button>
+    <!-- Overlay -->
+    <button class="btn" id="toggleStreamlines" title="Streamline overlay  [S]">〜 Streamlines</button>
+
+    <div class="tsep"></div>
+
+    <button class="btn" id="downloadData" title="Export CSV  [D]">⬇ CSV</button>
+
 </div>
 
 <!-- ═══ MAIN ══════════════════════════════════════════════════════════════════ -->
@@ -298,67 +365,93 @@
 
     <!-- ── Visualization area ── -->
     <div class="viz-area">
+
+        <!-- Field canvases: velocity + pressure -->
         <div class="canvas-grid">
 
-            <!-- Velocity canvas panel -->
             <div class="canvas-panel">
                 <div class="canvas-panel-title">Velocity Magnitude &amp; Vectors</div>
                 <div class="canvas-wrapper">
                     <canvas id="velocityCanvas" width="500" height="500"></canvas>
                 </div>
-                <div class="colorbar-row">
-                    <div class="colorbar-strip">
-                        <span class="cb-label" id="velMin">0.0000</span>
-                        <div class="colorbar-bar"
-                             style="background:linear-gradient(to right,#000080,#0000ff,#00ffff,#00ff00,#ffff00,#ff0000)"></div>
-                        <span class="cb-label right" id="velMax">—</span>
-                    </div>
-                    <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
-                        Velocity Magnitude (m/s) &nbsp;|&nbsp; Arrows: velocity vectors
-                    </div>
+                <div class="colorbar-strip">
+                    <span class="cb-label" id="velMin">0.0000</span>
+                    <div class="colorbar-bar"
+                         style="background:linear-gradient(to right,#000080,#0000ff,#00ffff,#00ff00,#ffff00,#ff0000)"></div>
+                    <span class="cb-label right" id="velMax">—</span>
                 </div>
             </div>
 
-            <!-- Pressure canvas panel -->
             <div class="canvas-panel">
                 <div class="canvas-panel-title">Pressure Field</div>
                 <div class="canvas-wrapper">
                     <canvas id="pressureCanvas" width="500" height="500"></canvas>
                 </div>
-                <div class="colorbar-row">
-                    <div class="colorbar-strip">
-                        <span class="cb-label" id="presMin">—</span>
-                        <div class="colorbar-bar"
-                             style="background:linear-gradient(to right,#0000ff,#00ffff,#ff8000,#ff0000)"></div>
-                        <span class="cb-label right" id="presMax">—</span>
-                    </div>
-                    <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
-                        Pressure (Pa) &nbsp;|&nbsp; Blue = low · Red = high
-                    </div>
+                <div class="colorbar-strip">
+                    <span class="cb-label" id="presMin">—</span>
+                    <div class="colorbar-bar"
+                         style="background:linear-gradient(to right,#0000ff,#00ffff,#ff8000,#ff0000)"></div>
+                    <span class="cb-label right" id="presMax">—</span>
                 </div>
             </div>
 
         </div><!-- /canvas-grid -->
+
+        <!-- Convergence chart -->
+        <div class="chart-panel">
+            <div class="chart-header">
+                <span class="chart-title">Convergence History</span>
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#3b82f6"></div>
+                        <span>|div u| (log₁₀)</span>
+                    </div>
+                    <div class="legend-item" id="extraLegend" style="display:none">
+                        <div class="legend-dot" style="background:#f59e0b"></div>
+                        <span id="extraLegendLabel">—</span>
+                    </div>
+                </div>
+            </div>
+            <canvas id="convergenceCanvas" width="900" height="160"></canvas>
+        </div>
+
     </div><!-- /viz-area -->
 
-    <!-- ── Right: control panel ── -->
+    <!-- ── Right control panel ── -->
     <div class="control-panel">
 
-        <!-- Simulation Parameters -->
-        <div class="cp-section" id="secParams">
-            <div class="cp-head" onclick="toggleSec('secParams')">
-                Simulation Parameters <span class="cp-arrow">▾</span>
+        <!-- Solver Info -->
+        <div class="cp-section" id="secSolver">
+            <div class="cp-head" onclick="toggleSec('secSolver')">
+                Active Solver <span class="cp-arrow">▾</span>
             </div>
             <div class="cp-body">
-                <div class="prow"><span class="pk">Grid size</span>      <span class="pv hi"  id="gridSize">—</span></div>
-                <div class="prow"><span class="pk">Total steps</span>    <span class="pv"     id="timeSteps">—</span></div>
-                <div class="prow"><span class="pk">Steps done</span>     <span class="pv hi"  id="stepsDone">—</span></div>
-                <div class="prow"><span class="pk">Reynolds Re</span>    <span class="pv hi"  id="reynolds">—</span></div>
-                <div class="prow"><span class="pk">Density ρ</span>      <span class="pv"     id="density">—</span></div>
-                <div class="prow"><span class="pk">Viscosity ν</span>    <span class="pv"     id="viscosity">—</span></div>
-                <div class="prow"><span class="pk">Time step dt</span>   <span class="pv"     id="timeStep">—</span></div>
-                <div class="prow"><span class="pk">Poisson iters</span>  <span class="pv"     id="nit">—</span></div>
-                <div class="prow"><span class="pk">|div u| avg</span>    <span class="pv warn" id="divNorm">—</span></div>
+                <div class="prow"><span class="pk">Solver</span>      <span class="pv hi"  id="pSolverName">Chorin</span></div>
+                <div class="prow"><span class="pk">Algorithm</span>   <span class="pv dim" id="pAlgorithm">Projection + GS</span></div>
+                <div class="prow"><span class="pk">Grid size</span>   <span class="pv hi"  id="gridSize">—</span></div>
+                <div class="prow"><span class="pk">Steps done</span>  <span class="pv hi"  id="stepsDone">0</span></div>
+                <div class="prow"><span class="pk">Max steps</span>   <span class="pv"     id="timeSteps">—</span></div>
+                <div class="prow"><span class="pk">Reynolds Re</span> <span class="pv hi"  id="reynolds">—</span></div>
+                <div class="prow"><span class="pk">dt</span>          <span class="pv"     id="timeStep">—</span></div>
+                <div class="prow"><span class="pk">Poisson iters</span><span class="pv"   id="nit">—</span></div>
+            </div>
+        </div>
+
+        <!-- Convergence -->
+        <div class="cp-section" id="secConv">
+            <div class="cp-head" onclick="toggleSec('secConv')">
+                Convergence <span class="cp-arrow">▾</span>
+            </div>
+            <div class="cp-body">
+                <div class="prow"><span class="pk">|div u| avg</span> <span class="pv warn" id="divNorm">—</span></div>
+                <div class="prow" id="rowResidual" style="display:none">
+                    <span class="pk" id="labelResidual">Residual</span>
+                    <span class="pv warn" id="valueResidual">—</span>
+                </div>
+                <div class="prow" id="rowPcgIters" style="display:none">
+                    <span class="pk">PCG iters</span>
+                    <span class="pv" id="valuePcgIters">—</span>
+                </div>
             </div>
         </div>
 
@@ -368,23 +461,23 @@
                 Field Statistics <span class="cp-arrow">▾</span>
             </div>
             <div class="cp-body">
-                <div class="prow"><span class="pk">Max |u|</span>       <span class="pv warn" id="maxU">—</span></div>
-                <div class="prow"><span class="pk">Max |v|</span>       <span class="pv warn" id="maxV">—</span></div>
-                <div class="prow"><span class="pk">Max pressure</span>  <span class="pv"      id="maxP">—</span></div>
-                <div class="prow"><span class="pk">Min pressure</span>  <span class="pv"      id="minP">—</span></div>
+                <div class="prow"><span class="pk">Max |u|</span>      <span class="pv warn" id="maxU">—</span></div>
+                <div class="prow"><span class="pk">Max |v|</span>      <span class="pv warn" id="maxV">—</span></div>
+                <div class="prow"><span class="pk">Max pressure</span> <span class="pv"     id="maxP">—</span></div>
+                <div class="prow"><span class="pk">Min pressure</span> <span class="pv"     id="minP">—</span></div>
             </div>
         </div>
 
-        <!-- Centre-point data -->
+        <!-- Centre-point -->
         <div class="cp-section" id="secCenter">
             <div class="cp-head" onclick="toggleSec('secCenter')">
                 Centre Point (nx/2, ny/2) <span class="cp-arrow">▾</span>
             </div>
             <div class="cp-body">
-                <div class="prow"><span class="pk">u velocity</span>    <span class="pv" id="centerU">—</span></div>
-                <div class="prow"><span class="pk">v velocity</span>    <span class="pv" id="centerV">—</span></div>
-                <div class="prow"><span class="pk">Pressure p</span>    <span class="pv" id="centerP">—</span></div>
-                <div class="prow"><span class="pk">|V| magnitude</span> <span class="pv" id="centerMag">—</span></div>
+                <div class="prow"><span class="pk">u velocity</span>   <span class="pv" id="centerU">—</span></div>
+                <div class="prow"><span class="pk">v velocity</span>   <span class="pv" id="centerV">—</span></div>
+                <div class="prow"><span class="pk">Pressure p</span>   <span class="pv" id="centerP">—</span></div>
+                <div class="prow"><span class="pk">|V| magnitude</span><span class="pv" id="centerMag">—</span></div>
             </div>
         </div>
 
@@ -393,663 +486,869 @@
             <div class="cp-head" onclick="toggleSec('secAbout')">
                 About <span class="cp-arrow">▾</span>
             </div>
-            <div class="cp-body" style="font-size:12px;color:var(--c-muted);line-height:1.6">
-                <p>Solves 2D incompressible Navier-Stokes in a square cavity.
-                Top boundary moves at u = 1; other walls are no-slip.
-                Pressure is solved via a Poisson equation each time step.</p>
-                <p style="margin-top:8px;font-size:11px;color:#475569">
-                    Solver: MoonBit → WebAssembly<br>
-                    Author: Fenfen Yu (余芬芬)<br>
-                    Affiliation: Beihang University<br>
+            <div class="cp-body" style="font-size:11px;color:var(--c-muted);line-height:1.6">
+                <p>2D lid-driven cavity flow — incompressible Navier-Stokes.
+                Top lid moves at u = 1; other walls no-slip.</p>
+                <p style="margin-top:6px;color:#475569;font-size:10px">
+                    Author: Fenfen Yu (余芬芬) · Beihang Univ.<br>
                     License: Apache-2.0
                 </p>
-                <p style="margin-top:8px;font-size:11px;color:#475569">
-                    Shortcuts: F=Run · Q=Quick · C=Clear · S=Streamlines · D=CSV
+                <p style="margin-top:6px;color:#475569;font-size:10px">
+                    Shortcuts: Space=Play/Pause · →=Step · R=Reset<br>
+                    S=Streamlines · D=CSV
                 </p>
-                <p style="margin-top:8px;font-size:11px;color:#475569">
-                    Build: <code style="background:var(--c-surface2);padding:1px 4px;border-radius:3px">bash build_wasm.sh release</code><br>
-                    Serve: <code style="background:var(--c-surface2);padding:1px 4px;border-radius:3px">python -m http.server 8080</code>
+                <p style="margin-top:6px;font-size:10px;color:#475569">
+                    Build: <code style="background:var(--c-surface2);padding:1px 3px;border-radius:3px">bash build_wasm.sh release</code><br>
+                    Serve: <code style="background:var(--c-surface2);padding:1px 3px;border-radius:3px">python -m http.server 8080</code>
                 </p>
             </div>
         </div>
 
     </div><!-- /control-panel -->
-
 </div><!-- /main -->
 
 <!-- ═══ STATUS BAR ════════════════════════════════════════════════════════════ -->
 <div class="statusbar">
-    <div class="sitem"><span class="sk">Max |u|</span> <span class="sv" id="stU">—</span></div>
-    <div class="sitem"><span class="sk">Max |v|</span> <span class="sv" id="stV">—</span></div>
-    <div class="sitem"><span class="sk">Div norm</span><span class="sv" id="stDiv">—</span></div>
-    <div class="sitem"><span class="sk">Grid</span>    <span class="sv" id="stGrid">—</span></div>
-    <div class="sitem"><span class="sk">Steps</span>   <span class="sv" id="stSteps">—</span></div>
+    <div class="sitem"><span class="sk">Solver</span>   <span class="sv" id="stSolver">—</span></div>
+    <div class="sitem"><span class="sk">Steps</span>    <span class="sv" id="stSteps">—</span></div>
+    <div class="sitem"><span class="sk">Max|u|</span>   <span class="sv" id="stU">—</span></div>
+    <div class="sitem"><span class="sk">Max|v|</span>   <span class="sv" id="stV">—</span></div>
+    <div class="sitem"><span class="sk">|div u|</span>  <span class="sv" id="stDiv">—</span></div>
     <span class="smsg loading" id="stMsg">Loading WebAssembly module…</span>
 </div>
 
 <!-- ═══ SCRIPT ════════════════════════════════════════════════════════════════ -->
 <script>
-    /* ── Collapsible sections ── */
-    function toggleSec(id) {
-        document.getElementById(id).classList.toggle('collapsed');
+
+/* ── Collapsible sections ──────────────────────────────────────────────────── */
+function toggleSec(id) { document.getElementById(id).classList.toggle('collapsed'); }
+
+/* ── Per-solver API table ──────────────────────────────────────────────────── */
+const SOLVER_META = {
+    chorin: {
+        label: 'Chorin',
+        algo:  'Projection + Gauss-Seidel',
+        init:    w => w.init_simulation(),
+        runN:    (w, n) => w.run_n_steps(n),
+        steps:   w => w.get_step_count(),
+        divNorm: w => w.get_divergence_norm(),
+        extraLabel: null,
+        extra:   ()  => null,
+        nx:      w => w.get_nx(),
+        ny:      w => w.get_ny(),
+        totalN:  w => w.get_nt ? w.get_nt() : 500,
+        u:    (w,i,j) => w.get_u_at(i,j),
+        v:    (w,i,j) => w.get_v_at(i,j),
+        p:    (w,i,j) => w.get_p_at(i,j),
+        mag:  (w,i,j) => w.get_velocity_magnitude_at ? w.get_velocity_magnitude_at(i,j) : null,
+        maxU: w => w.get_max_u ? w.get_max_u() : null,
+        maxV: w => w.get_max_v ? w.get_max_v() : null,
+        maxP: w => w.get_max_p ? w.get_max_p() : null,
+        minP: w => w.get_min_p ? w.get_min_p() : null,
+        maxMag: w => w.get_max_velocity_magnitude ? w.get_max_velocity_magnitude() : null,
+        cu: w => w.get_u_center ? w.get_u_center() : null,
+        cv: w => w.get_v_center ? w.get_v_center() : null,
+        cp: w => w.get_p_center ? w.get_p_center() : null,
+    },
+    simple: {
+        label: 'SIMPLE',
+        algo:  'Pressure-correction + under-relax',
+        init:    w => w.init_simple(),
+        runN:    (w, n) => w.run_simple_n_iter(n),
+        steps:   w => w.get_simple_step_count(),
+        divNorm: w => w.get_simple_divergence_norm(),
+        extraLabel: 'p-correction residual',
+        extra:   w => w.get_simple_residual ? w.get_simple_residual() : null,
+        nx:      w => w.get_nx(),
+        ny:      w => w.get_ny(),
+        totalN:  () => 100,
+        u:    (w,i,j) => w.get_u_simple_at(i,j),
+        v:    (w,i,j) => w.get_v_simple_at(i,j),
+        p:    (w,i,j) => w.get_p_simple_at(i,j),
+        mag:  ()       => null,
+        maxU: w => w.get_max_u_simple ? w.get_max_u_simple() : null,
+        maxV: ()       => null,
+        maxP: ()       => null,
+        minP: ()       => null,
+        maxMag: ()     => null,
+        cu: ()         => null,
+        cv: ()         => null,
+        cp: ()         => null,
+    },
+    pcg: {
+        label: 'Chorin-PCG',
+        algo:  'Projection + PCG (Jacobi precond.)',
+        init:    w => w.init_chorin_pcg(),
+        runN:    (w, n) => w.run_chorin_pcg_n_steps(n),
+        steps:   w => w.get_pcg_step_count(),
+        divNorm: w => w.get_pcg_divergence_norm(),
+        extraLabel: 'PCG iters (last step)',
+        extra:   w => w.get_pcg_last_iters ? w.get_pcg_last_iters() : null,
+        nx:      w => w.get_nx(),
+        ny:      w => w.get_ny(),
+        totalN:  w => w.get_nt ? w.get_nt() : 500,
+        u:    (w,i,j) => w.get_u_pcg_at(i,j),
+        v:    (w,i,j) => w.get_v_pcg_at(i,j),
+        p:    (w,i,j) => w.get_p_pcg_at(i,j),
+        mag:  (w,i,j) => w.get_velocity_magnitude_pcg_at ? w.get_velocity_magnitude_pcg_at(i,j) : null,
+        maxU: w => w.get_max_u_pcg ? w.get_max_u_pcg() : null,
+        maxV: w => w.get_max_v_pcg ? w.get_max_v_pcg() : null,
+        maxP: w => w.get_max_p_pcg ? w.get_max_p_pcg() : null,
+        minP: w => w.get_min_p_pcg ? w.get_min_p_pcg() : null,
+        maxMag: ()     => null,
+        cu: ()         => null,
+        cv: ()         => null,
+        cp: ()         => null,
+    },
+    mac: {
+        label: 'MAC Staggered',
+        algo:  'Harlow-Welch MAC + PCG',
+        init:    w => w.init_mac(),
+        runN:    (w, n) => w.run_mac_n_steps(n),
+        steps:   w => w.get_mac_step_count(),
+        divNorm: w => w.get_mac_divergence_norm(),
+        extraLabel: 'PCG iters (last step)',
+        extra:   w => w.get_mac_last_iters ? w.get_mac_last_iters() : null,
+        nx:      w => w.get_mac_nc ? w.get_mac_nc() : 40,
+        ny:      w => w.get_mac_nc ? w.get_mac_nc() : 40,
+        totalN:  w => w.get_nt ? w.get_nt() : 500,
+        u:    (w,i,j) => w.get_u_mac_at(i,j),
+        v:    (w,i,j) => w.get_v_mac_at(i,j),
+        p:    (w,i,j) => w.get_p_mac_at(i,j),
+        mag:  (w,i,j) => w.get_velocity_magnitude_mac_at ? w.get_velocity_magnitude_mac_at(i,j) : null,
+        maxU: w => w.get_max_u_mac ? w.get_max_u_mac() : null,
+        maxV: w => w.get_max_v_mac ? w.get_max_v_mac() : null,
+        maxP: w => w.get_max_p_mac ? w.get_max_p_mac() : null,
+        minP: w => w.get_min_p_mac ? w.get_min_p_mac() : null,
+        maxMag: ()     => null,
+        cu: ()         => null,
+        cv: ()         => null,
+        cp: ()         => null,
+    },
+};
+
+/* ── Main visualizer class ─────────────────────────────────────────────────── */
+class FluidSimulationVisualizer {
+    constructor() {
+        this.wasmModule       = null;
+        this.simulationData   = null;
+        this.config           = null;
+        this.activeSolver     = 'chorin';
+        this.showStreamlines  = false;
+        this.isPlaying        = false;
+        this.animTimer        = null;
+        this.convergenceHistory = [];   // [{step, divNorm, extra}]
+
+        this.velocityCanvas  = document.getElementById('velocityCanvas');
+        this.pressureCanvas  = document.getElementById('pressureCanvas');
+        this.convCanvas      = document.getElementById('convergenceCanvas');
+        this.velocityCtx     = this.velocityCanvas.getContext('2d');
+        this.pressureCtx     = this.pressureCanvas.getContext('2d');
+        this.convCtx         = this.convCanvas.getContext('2d');
+
+        this._bindEvents();
+        this._updateSolverUI();
+        this.updateStatus('Ready to load WebAssembly module', 'idle');
     }
 
-    /* ── Main visualizer class ── */
-    class FluidSimulationVisualizer {
-        constructor() {
-            this.wasmModule = null;
-            this.simulationData = null;
-            this.config = null;
-            this.showStreamlines = false;
-            this.velocityCanvas  = document.getElementById('velocityCanvas');
-            this.pressureCanvas  = document.getElementById('pressureCanvas');
-            this.velocityCtx     = this.velocityCanvas.getContext('2d');
-            this.pressureCtx     = this.pressureCanvas.getContext('2d');
+    /* ── Event wiring ── */
+    _bindEvents() {
+        document.getElementById('btnPlay').addEventListener('click',  () => this.playStart());
+        document.getElementById('btnPause').addEventListener('click', () => this.playPause());
+        document.getElementById('btnStep').addEventListener('click',  () => this.playStep());
+        document.getElementById('btnReset').addEventListener('click', () => this.playReset());
+        document.getElementById('toggleStreamlines').addEventListener('click', () => {
+            this.showStreamlines = !this.showStreamlines;
+            document.getElementById('toggleStreamlines').classList.toggle('active', this.showStreamlines);
+            if (this.simulationData) this.visualizeResults();
+        });
+        document.getElementById('downloadData').addEventListener('click', () => this.downloadData());
 
-            this.initializeEventListeners();
-            this.updateStatus('Ready to load WebAssembly module', 'idle');
-        }
-
-        initializeEventListeners() {
-            document.getElementById('runSimulation').addEventListener('click',  () => this.runFullSimulation());
-            document.getElementById('runSimpleTest').addEventListener('click',  () => this.runSimpleTest());
-            document.getElementById('clearCanvas').addEventListener('click',    () => this.clearCanvases());
-            document.getElementById('downloadData').addEventListener('click',   () => this.downloadData());
-            document.getElementById('toggleStreamlines').addEventListener('click', () => {
-                this.showStreamlines = !this.showStreamlines;
-                document.getElementById('toggleStreamlines').classList.toggle('active', this.showStreamlines);
-                if (this.simulationData) this.visualizeResults();
-            });
-            document.addEventListener('keydown', (e) => {
-                if (e.target.tagName === 'INPUT') return;
-                switch (e.key.toUpperCase()) {
-                    case 'F': this.runFullSimulation(); break;
-                    case 'Q': this.runSimpleTest();     break;
-                    case 'C': this.clearCanvases();     break;
-                    case 'D': this.downloadData();      break;
-                    case 'S': document.getElementById('toggleStreamlines').click(); break;
-                }
-            });
-        }
-
-        /* ── Status helpers ── */
-        updateStatus(message, type = 'loading') {
-            // type: 'loading' | 'ok' | 'err' | 'idle'
-            const dot = document.getElementById('headerDot');
-            const msg = document.getElementById('headerMsg');
-            const bar = document.getElementById('stMsg');
-            msg.textContent = message;
-
-            dot.className = 'dot';
-            if (type === 'ok')      { dot.classList.add('');       }
-            else if (type === 'loading') { dot.classList.add('loading'); }
-            else if (type === 'err')     { dot.classList.add('error');   }
-            else                         { dot.classList.add('idle');    }
-
-            bar.textContent  = message;
-            bar.className    = 'smsg';
-            if (type === 'ok')      bar.classList.add('ok');
-            else if (type === 'err') bar.classList.add('err');
-            else if (type === 'loading') bar.classList.add('loading');
-        }
-
-        /* ── WASM loading ── */
-        async loadWasmModule() {
-            try {
-                this.updateStatus('Loading WebAssembly module…', 'loading');
-                const wasmPaths = [
-                    '../../_build/wasm-gc/release/build/cmd/main/main.wasm',
-                    '../../_build/wasm-gc/debug/build/cmd/main/main.wasm'
-                ];
-                let response = null;
-                for (const p of wasmPaths) {
-                    const r = await fetch(p);
-                    if (r.ok) { response = r; break; }
-                }
-                if (!response) throw new Error('WASM not found — run: bash build_wasm.sh release');
-                const wasmBytes = await response.arrayBuffer();
-
-                const noopFn = () => {};
-                const makeNoopModule = () => new Proxy({}, { get: () => noopFn });
-                const importObject = new Proxy({
-                    spectest: { print_char: noopFn, print_i32: noopFn, print_f64: noopFn },
-                    env: { println: (s) => console.log('[mbt]', s) },
-                    'moonbit:ffi': { println: (s) => console.log('[mbt]', s) },
-                }, { get: (t, k) => k in t ? t[k] : makeNoopModule() });
-
-                const wasmModule = await WebAssembly.instantiate(wasmBytes, importObject);
-                this.wasmModule = wasmModule.instance.exports;
-                this.updateStatus('WASM loaded — press Run to simulate', 'ok');
-                return true;
-            } catch (error) {
-                console.error('WASM load failed:', error);
-                this.updateStatus('WASM not found — using mock data', 'err');
-                return false;
+        document.addEventListener('keydown', e => {
+            if (e.target.tagName === 'INPUT') return;
+            switch (e.key) {
+                case ' ':
+                    e.preventDefault();
+                    this.isPlaying ? this.playPause() : this.playStart();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    this.playStep();
+                    break;
+                case 'r': case 'R': this.playReset(); break;
+                case 's': case 'S':
+                    document.getElementById('toggleStreamlines').click();
+                    break;
+                case 'd': case 'D': this.downloadData(); break;
             }
+        });
+    }
+
+    /* ── Solver selection ── */
+    setSolver(key) {
+        if (this.isPlaying) this.playPause();
+        this.activeSolver = key;
+        this._updateSolverUI();
+        // If WASM loaded, re-read config for new solver
+        if (this.wasmModule) {
+            this.config = this._readConfig();
+            this._updateParamDisplay();
         }
+    }
 
-        /* ── Simulation runners ── */
-        async runFullSimulation() {
-            this.updateStatus('Running simulation…', 'loading');
-            try {
-                if (this.wasmModule && this.wasmModule.init_simulation) {
-                    const totalSteps = this.wasmModule.get_nt ? this.wasmModule.get_nt() : 500;
-                    const chunkSize  = 50;
-                    this.wasmModule.init_simulation();
-                    this.config = this._readConfigFromWasm();
+    _updateSolverUI() {
+        const keys = ['chorin','simple','pcg','mac'];
+        const btnIds = ['btnSolChorin','btnSolSimple','btnSolPcg','btnSolMac'];
+        keys.forEach((k, i) => {
+            document.getElementById(btnIds[i]).classList.toggle('active', k === this.activeSolver);
+        });
+        const m = SOLVER_META[this.activeSolver];
+        document.getElementById('pSolverName').textContent = m.label;
+        document.getElementById('pAlgorithm').textContent  = m.algo;
+        document.getElementById('stSolver').textContent    = m.label;
 
-                    for (let done = 0; done < totalSteps; done += chunkSize) {
-                        const n = Math.min(chunkSize, totalSteps - done);
-                        if (this.wasmModule.run_n_steps) {
-                            this.wasmModule.run_n_steps(n);
-                        } else {
-                            this.wasmModule.run_all_steps();
-                            done = totalSteps;
-                        }
-                        this.simulationData = this._readGridFromWasm();
-                        this.updateParameterDisplay();
-                        this.visualizeResults();
-                        this.updateStatus(
-                            `Running… ${Math.min(done + chunkSize, totalSteps)}/${totalSteps} steps`,
-                            'loading');
-                        await new Promise(r => setTimeout(r, 0));
-                    }
-                } else {
-                    const result = JSON.parse(this.generateMockFullSimulationData());
-                    this.simulationData = result.data;
-                    this.config = result.config;
-                    this.updateParameterDisplay();
-                    this.visualizeResults();
-                }
-                this.updateStatus('Simulation complete', 'ok');
-            } catch (error) {
-                console.error('Simulation failed:', error);
-                this.updateStatus('Error: ' + error.message, 'err');
-            }
-        }
+        // Extra metric rows in panel
+        const hasResid = m.extraLabel && m.extraLabel.includes('residual');
+        const hasPcg   = m.extraLabel && m.extraLabel.includes('PCG');
+        document.getElementById('rowResidual').style.display  = hasResid ? '' : 'none';
+        document.getElementById('rowPcgIters').style.display  = hasPcg   ? '' : 'none';
+        if (hasResid) document.getElementById('labelResidual').textContent = m.extraLabel;
 
-        async runSimpleTest() {
-            const quickSteps = 50;
-            this.updateStatus(`Quick preview (${quickSteps} steps)…`, 'loading');
-            try {
-                if (this.wasmModule && this.wasmModule.init_simulation) {
-                    this.wasmModule.init_simulation();
-                    this.config = this._readConfigFromWasm();
-                    await new Promise(r => setTimeout(r, 0));
-                    if (this.wasmModule.run_n_steps) {
-                        this.wasmModule.run_n_steps(quickSteps);
-                    } else {
-                        this.wasmModule.run_all_steps();
-                    }
-                    this.simulationData = this._readGridFromWasm();
-                } else {
-                    this.simulationData = JSON.parse(this.generateMockSimpleData());
-                    this.config = { nx: 21, ny: 21, nt: 50,
-                        dx: 0.1, dy: 0.1, dt: 0.001, rho: 1.0, nu: 0.1, re: 20 };
-                }
-                this.updateParameterDisplay();
-                this.visualizeResults();
-                this.updateStatus(`Quick preview done (${quickSteps} steps)`, 'ok');
-            } catch (error) {
-                console.error('Quick preview failed:', error);
-                this.updateStatus('Error: ' + error.message, 'err');
-            }
-        }
+        // Chart legend
+        const hasExtra = !!m.extraLabel;
+        document.getElementById('extraLegend').style.display = hasExtra ? '' : 'none';
+        if (hasExtra) document.getElementById('extraLegendLabel').textContent = m.extraLabel;
+    }
 
-        /* ── WASM data readers ── */
-        _readGridFromWasm() {
-            const wasm = this.wasmModule;
-            const nx = wasm.get_nx(), ny = wasm.get_ny();
-            const data = [];
-            for (let i = 0; i < ny; i++) {
-                for (let j = 0; j < nx; j++) {
-                    const u = wasm.get_u_at(i, j);
-                    const v = wasm.get_v_at(i, j);
-                    const p = wasm.get_p_at(i, j);
-                    const magnitude = wasm.get_velocity_magnitude_at
-                        ? wasm.get_velocity_magnitude_at(i, j)
-                        : Math.sqrt(u * u + v * v);
-                    data.push({ x: j / (nx - 1) * 2.0, y: i / (ny - 1) * 2.0,
-                                u, v, p, magnitude, i, j });
-                }
-            }
-            return data;
-        }
+    /* ── Status helpers ── */
+    updateStatus(msg, type = 'loading') {
+        const dot = document.getElementById('headerDot');
+        document.getElementById('headerMsg').textContent = msg;
+        document.getElementById('stMsg').textContent     = msg;
+        dot.className = 'dot ' + (type === 'ok' ? '' : type);
+        const bar = document.getElementById('stMsg');
+        bar.className = 'smsg ' + (type === 'ok' ? 'ok' : type === 'err' ? 'err' : type === 'idle' ? '' : 'loading');
+    }
 
-        _readConfigFromWasm() {
-            const w = this.wasmModule;
-            const nx = w.get_nx(), ny = w.get_ny(), nt = w.get_nt();
-            return {
-                nx, ny, nt,
-                dx:  w.get_dx  ? w.get_dx()  : 2.0 / (nx - 1),
-                dy:  w.get_dy  ? w.get_dy()  : 2.0 / (ny - 1),
-                dt:  w.get_dt  ? w.get_dt()  : 0.001,
-                rho: w.get_rho ? w.get_rho() : 1.0,
-                nu:  w.get_nu  ? w.get_nu()  : 0.1,
-                re:  w.get_re  ? w.get_re()  : 20.0,
-            };
-        }
-
-        /* ── Display update ── */
-        updateParameterDisplay() {
-            if (this.config) {
-                const c = this.config;
-                document.getElementById('gridSize').textContent  = `${c.nx} × ${c.ny}`;
-                document.getElementById('timeSteps').textContent = c.nt || '—';
-                document.getElementById('density').textContent   = c.rho.toFixed(2);
-                document.getElementById('viscosity').textContent = c.nu.toFixed(3);
-                document.getElementById('timeStep').textContent  = c.dt.toFixed(6);
-                const nit = this.wasmModule && this.wasmModule.get_nit
-                    ? this.wasmModule.get_nit() : '—';
-                document.getElementById('nit').textContent = nit;
-                const steps = this.wasmModule && this.wasmModule.get_step_count
-                    ? this.wasmModule.get_step_count() : '—';
-                document.getElementById('stepsDone').textContent = steps;
-                const divN = this.wasmModule && this.wasmModule.get_divergence_norm
-                    ? this.wasmModule.get_divergence_norm().toExponential(3) : '—';
-                document.getElementById('divNorm').textContent = divN;
-                const Re = c.re !== undefined
-                    ? c.re : (c.rho * 1.0 * 2.0) / c.nu;
-                document.getElementById('reynolds').textContent = Re.toFixed(1);
-
-                // status bar
-                document.getElementById('stGrid').textContent  = `${c.nx}×${c.ny}`;
-                document.getElementById('stSteps').textContent = typeof steps === 'number' ? steps : '—';
-                if (typeof divN === 'string') document.getElementById('stDiv').textContent = divN;
-            }
-            if (this.simulationData) this.updateFieldStatistics();
-        }
-
-        updateFieldStatistics() {
-            let maxU = 0, maxV = 0;
-            let maxP = -Infinity, minP = Infinity;
-            let centerU = 0, centerV = 0, centerP = 0;
-            const nx = this.config ? this.config.nx : 21;
-            const ny = this.config ? this.config.ny : 21;
-            const ci = Math.floor(ny / 2), cj = Math.floor(nx / 2);
-
-            this.simulationData.forEach(pt => {
-                maxU = Math.max(maxU, Math.abs(pt.u));
-                maxV = Math.max(maxV, Math.abs(pt.v));
-                if (pt.p !== undefined) {
-                    if (pt.p > maxP) maxP = pt.p;
-                    if (pt.p < minP) minP = pt.p;
-                }
-                if (pt.i === ci && pt.j === cj) {
-                    centerU = pt.u; centerV = pt.v;
-                    centerP = pt.p !== undefined ? pt.p : 0;
-                }
-            });
-
-            document.getElementById('maxU').textContent = maxU.toFixed(4);
-            document.getElementById('maxV').textContent = maxV.toFixed(4);
-            document.getElementById('maxP').textContent = isFinite(maxP) ? maxP.toFixed(4) : '—';
-            document.getElementById('minP').textContent = isFinite(minP) ? minP.toFixed(4) : '—';
-
-            const cu = (this.wasmModule && this.wasmModule.get_u_center)
-                ? this.wasmModule.get_u_center() : centerU;
-            const cv = (this.wasmModule && this.wasmModule.get_v_center)
-                ? this.wasmModule.get_v_center() : centerV;
-            const cp = (this.wasmModule && this.wasmModule.get_p_center)
-                ? this.wasmModule.get_p_center() : centerP;
-            document.getElementById('centerU').textContent   = cu.toFixed(4);
-            document.getElementById('centerV').textContent   = cv.toFixed(4);
-            document.getElementById('centerP').textContent   = cp.toFixed(4);
-            document.getElementById('centerMag').textContent = Math.sqrt(cu*cu + cv*cv).toFixed(4);
-
-            const velMax = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
-                ? this.wasmModule.get_max_velocity_magnitude() : maxU;
-            document.getElementById('velMin').textContent  = '0.0000';
-            document.getElementById('velMax').textContent  = velMax.toFixed(4);
-            if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
-            if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
-
-            // status bar
-            document.getElementById('stU').textContent = maxU.toFixed(4);
-            document.getElementById('stV').textContent = maxV.toFixed(4);
-        }
-
-        /* ── Visualize ── */
-        visualizeResults() {
-            this.clearCanvasPixels();
-            this.drawVelocityField();
-            this.drawPressureField();
-            if (this.showStreamlines) {
-                const nx = this.config ? this.config.nx : 41;
-                const ny = this.config ? this.config.ny : 41;
-                const grid = Array.from({ length: ny }, () => new Array(nx));
-                this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
-                this.drawStreamlines(grid, nx, ny);
-            }
-        }
-
-        /* Clear only pixel content, not info panel */
-        clearCanvasPixels() {
-            this.velocityCtx.clearRect(0, 0, this.velocityCanvas.width, this.velocityCanvas.height);
-            this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
-        }
-
-        clearCanvases() {
-            this.clearCanvasPixels();
-            ['gridSize','timeSteps','density','viscosity','timeStep','reynolds',
-             'nit','stepsDone','divNorm','maxU','maxV','maxP','minP',
-             'centerU','centerV','centerP','centerMag']
-                .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
-            document.getElementById('velMin').textContent  = '0.0000';
-            document.getElementById('velMax').textContent  = '—';
-            document.getElementById('presMin').textContent = '—';
-            document.getElementById('presMax').textContent = '—';
-            ['stU','stV','stDiv','stGrid','stSteps']
-                .forEach(id => { document.getElementById(id).textContent = '—'; });
-            this.simulationData = null;
-            this.config = null;
-            this.updateStatus('Cleared — press Run to start', 'idle');
-        }
-
-        /* ── Draw velocity field ── */
-        drawVelocityField() {
-            const canvas = this.velocityCanvas;
-            const ctx    = this.velocityCtx;
-            const width  = canvas.width;
-            const height = canvas.height;
-            if (!this.simulationData) return;
-
-            const maxMagnitude = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
-                ? (this.wasmModule.get_max_velocity_magnitude() || 1)
-                : (Math.max(...this.simulationData.map(p => p.magnitude)) || 1);
-
-            const nx = this.config ? this.config.nx : 41;
-            const ny = this.config ? this.config.ny : 41;
-            const grid = Array.from({ length: ny }, () => new Array(nx));
-            this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
-
-            const imageData = ctx.createImageData(width, height);
-            for (let py = 0; py < height; py++) {
-                for (let px = 0; px < width; px++) {
-                    const gx = px / (width  - 1) * (nx - 1);
-                    const gy = (1 - py / (height - 1)) * (ny - 1);
-                    const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
-                    const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
-                    const tx = gx - j0, ty = gy - i0;
-                    const p00 = grid[i0][j0], p10 = grid[i1][j0];
-                    const p01 = grid[i0][j1], p11 = grid[i1][j1];
-                    if (!p00 || !p10 || !p01 || !p11) continue;
-                    const mag = p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
-                                p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty;
-                    const color = this.velocityMagnitudeToColor(mag / maxMagnitude);
-                    const idx = (py * width + px) * 4;
-                    imageData.data[idx]     = color.r;
-                    imageData.data[idx + 1] = color.g;
-                    imageData.data[idx + 2] = color.b;
-                    imageData.data[idx + 3] = 255;
-                }
-            }
-            ctx.putImageData(imageData, 0, 0);
-
-            // Velocity arrows
-            const step = Math.max(1, Math.floor(nx / 20));
-            const cellPx = width / nx;
-            const arrowScale = (cellPx * step * 0.8) / (maxMagnitude || 1);
-
-            ctx.strokeStyle = 'rgba(220,220,220,0.7)';
-            ctx.lineWidth = 1;
-            this.simulationData.forEach(pt => {
-                if (pt.i !== undefined && pt.j !== undefined &&
-                    pt.i % step === 0 && pt.j % step === 0) {
-                    const px = (pt.x / 2.0) * width;
-                    const py = (1.0 - pt.y / 2.0) * height;
-                    this.drawArrow(ctx, px, py,
-                        px + pt.u * arrowScale, py - pt.v * arrowScale);
-                }
-            });
-
-            // Border + lid label
-            ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(0.75, 0.75, width - 1.5, height - 1.5);
-            ctx.fillStyle = 'rgba(251,191,36,0.9)';
-            ctx.font = 'bold 11px monospace';
-            ctx.fillText('→ Moving Lid  u = 1', 8, 16);
-        }
-
-        /* ── Draw pressure field ── */
-        drawPressureField() {
-            const ctx    = this.pressureCtx;
-            const width  = this.pressureCanvas.width;
-            const height = this.pressureCanvas.height;
-            if (!this.simulationData) return;
-
-            let minP = Infinity, maxP = -Infinity;
-            this.simulationData.forEach(pt => {
-                if (pt.p !== undefined) {
-                    if (pt.p < minP) minP = pt.p;
-                    if (pt.p > maxP) maxP = pt.p;
-                }
-            });
-            const rangeP = maxP - minP || 1;
-
-            const nx = this.config ? this.config.nx : 41;
-            const ny = this.config ? this.config.ny : 41;
-            const grid = Array.from({ length: ny }, () => new Array(nx));
-            this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
-
-            const imageData = ctx.createImageData(width, height);
-            for (let py = 0; py < height; py++) {
-                for (let px = 0; px < width; px++) {
-                    const gx = px / (width  - 1) * (nx - 1);
-                    const gy = (1 - py / (height - 1)) * (ny - 1);
-                    const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
-                    const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
-                    const tx = gx - j0, ty = gy - i0;
-                    const p00 = grid[i0][j0], p10 = grid[i1][j0];
-                    const p01 = grid[i0][j1], p11 = grid[i1][j1];
-                    if (!p00 || !p10 || !p01 || !p11) continue;
-                    const pval = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
-                                 (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
-                    const t = (pval - minP) / rangeP;
-                    const color = this.pressureToColor(t);
-                    const idx = (py * width + px) * 4;
-                    imageData.data[idx]     = color.r;
-                    imageData.data[idx + 1] = color.g;
-                    imageData.data[idx + 2] = color.b;
-                    imageData.data[idx + 3] = 255;
-                }
-            }
-            ctx.putImageData(imageData, 0, 0);
-
-            ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(0.75, 0.75, width - 1.5, height - 1.5);
-        }
-
-        /* ── Streamlines (RK4) ── */
-        _interpVelocity(grid, nx, ny, x, y) {
-            const dx = 2.0 / (nx - 1);
-            const dy = 2.0 / (ny - 1);
-            const gj = x / dx, gi = y / dy;
-            if (gj < 0 || gj >= nx - 1 || gi < 0 || gi >= ny - 1) return null;
-            const j0 = Math.floor(gj), j1 = j0 + 1;
-            const i0 = Math.floor(gi), i1 = i0 + 1;
-            const tx = gj - j0, ty = gi - i0;
-            const p00 = grid[i0][j0], p10 = grid[i1][j0];
-            const p01 = grid[i0][j1], p11 = grid[i1][j1];
-            if (!p00 || !p10 || !p01 || !p11) return null;
-            return {
-                u: p00.u*(1-tx)*(1-ty) + p01.u*tx*(1-ty) + p10.u*(1-tx)*ty + p11.u*tx*ty,
-                v: p00.v*(1-tx)*(1-ty) + p01.v*tx*(1-ty) + p10.v*(1-tx)*ty + p11.v*tx*ty,
-            };
-        }
-
-        drawStreamlines(grid, nx, ny) {
-            const ctx = this.velocityCtx;
-            const cw = this.velocityCanvas.width;
-            const ch = this.velocityCanvas.height;
-
-            let maxMag = 0;
-            this.simulationData.forEach(pt => { if (pt.magnitude > maxMag) maxMag = pt.magnitude; });
-            if (maxMag < 1e-12) return;
-
-            const ds = 0.04, maxSteps = 300, nSeeds = 8;
-
-            ctx.save();
-            ctx.lineWidth  = 1.2;
-            ctx.globalAlpha = 0.75;
-
-            for (let si = 0; si < nSeeds; si++) {
-                for (let sj = 0; sj < nSeeds; sj++) {
-                    let x = 0.15 + (1.70 / (nSeeds - 1)) * sj;
-                    let y = 0.15 + (1.70 / (nSeeds - 1)) * si;
-
-                    const v0 = this._interpVelocity(grid, nx, ny, x, y);
-                    if (!v0) continue;
-                    const m0 = Math.sqrt(v0.u * v0.u + v0.v * v0.v) / maxMag;
-                    const g  = Math.round(180 + m0 * 75);
-                    ctx.strokeStyle = `rgb(${Math.round(200 - m0*100)},${g},255)`;
-
-                    ctx.beginPath();
-                    ctx.moveTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
-
-                    let drawing = false;
-                    for (let step = 0; step < maxSteps; step++) {
-                        const uv1 = this._interpVelocity(grid, nx, ny, x, y);
-                        if (!uv1) break;
-                        const m1 = Math.sqrt(uv1.u*uv1.u + uv1.v*uv1.v) || 1e-12;
-                        const k1x = uv1.u/m1, k1y = uv1.v/m1;
-
-                        const uv2 = this._interpVelocity(grid, nx, ny, x+0.5*ds*k1x, y+0.5*ds*k1y);
-                        if (!uv2) break;
-                        const m2 = Math.sqrt(uv2.u*uv2.u + uv2.v*uv2.v) || 1e-12;
-                        const k2x = uv2.u/m2, k2y = uv2.v/m2;
-
-                        const uv3 = this._interpVelocity(grid, nx, ny, x+0.5*ds*k2x, y+0.5*ds*k2y);
-                        if (!uv3) break;
-                        const m3 = Math.sqrt(uv3.u*uv3.u + uv3.v*uv3.v) || 1e-12;
-                        const k3x = uv3.u/m3, k3y = uv3.v/m3;
-
-                        const uv4 = this._interpVelocity(grid, nx, ny, x+ds*k3x, y+ds*k3y);
-                        if (!uv4) break;
-                        const m4 = Math.sqrt(uv4.u*uv4.u + uv4.v*uv4.v) || 1e-12;
-                        const k4x = uv4.u/m4, k4y = uv4.v/m4;
-
-                        x += ds * (k1x + 2*k2x + 2*k3x + k4x) / 6;
-                        y += ds * (k1y + 2*k2y + 2*k3y + k4y) / 6;
-
-                        if (x < 0 || x > 2 || y < 0 || y > 2) break;
-                        ctx.lineTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
-                        drawing = true;
-                    }
-                    if (drawing) ctx.stroke();
-                }
-            }
-            ctx.restore();
-        }
-
-        /* ── Colourmaps ── */
-        velocityMagnitudeToColor(intensity) {
-            intensity = Math.max(0, Math.min(1, intensity));
-            const stops = [
-                [0,   0, 128], [0,   0, 255], [0, 255, 255],
-                [0, 255,   0], [255,255,  0], [255,  0,  0],
+    /* ── WASM loading ── */
+    async loadWasmModule() {
+        try {
+            this.updateStatus('Loading WebAssembly module…', 'loading');
+            const paths = [
+                '../../_build/wasm-gc/release/build/cmd/main/main.wasm',
+                '../../_build/wasm-gc/debug/build/cmd/main/main.wasm'
             ];
-            const seg = intensity * (stops.length - 1);
-            const lo  = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
-            const t   = seg - lo;
-            return {
-                r: Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * t),
-                g: Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * t),
-                b: Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * t),
-            };
-        }
+            let resp = null;
+            for (const p of paths) { const r = await fetch(p); if (r.ok) { resp = r; break; } }
+            if (!resp) throw new Error('WASM not found — run: bash build_wasm.sh release');
 
-        pressureToColor(t) {
-            t = Math.max(0, Math.min(1, t));
-            const stops = [[0,0,255],[0,255,255],[255,128,0],[255,0,0]];
-            const seg = t * (stops.length - 1);
-            const lo  = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
-            const s   = seg - lo;
-            return {
-                r: Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * s),
-                g: Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * s),
-                b: Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * s),
-            };
-        }
+            const bytes = await resp.arrayBuffer();
+            const noop  = () => {};
+            const noopMod = () => new Proxy({}, { get: () => noop });
+            const imports = new Proxy({
+                spectest:     { print_char: noop, print_i32: noop, print_f64: noop },
+                env:          { println: s => console.log('[mbt]', s) },
+                'moonbit:ffi':{ println: s => console.log('[mbt]', s) },
+            }, { get: (t, k) => k in t ? t[k] : noopMod() });
 
-        drawArrow(ctx, x1, y1, x2, y2) {
-            const dx = x2 - x1, dy = y2 - y1;
-            const length = Math.sqrt(dx*dx + dy*dy);
-            if (length < 2) return;
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-            const al = Math.min(7, length * 0.3);
-            const aa = Math.PI / 6;
-            const angle = Math.atan2(dy, dx);
-            ctx.beginPath();
-            ctx.moveTo(x2, y2);
-            ctx.lineTo(x2 - al*Math.cos(angle-aa), y2 - al*Math.sin(angle-aa));
-            ctx.moveTo(x2, y2);
-            ctx.lineTo(x2 - al*Math.cos(angle+aa), y2 - al*Math.sin(angle+aa));
-            ctx.stroke();
-        }
-
-        /* ── CSV download ── */
-        downloadData() {
-            if (!this.simulationData) { alert('No simulation data to download.'); return; }
-            let csv = 'i,j,x,y,u,v,magnitude,pressure\n';
-            this.simulationData.forEach(pt => {
-                csv += `${pt.i??''},${pt.j??''},${pt.x},${pt.y},${pt.u},${pt.v},${pt.magnitude},${pt.p??''}\n`;
-            });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-            a.download = 'cavity_flow_data.csv';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
-        }
-
-        /* ── Mock data (WASM unavailable) ── */
-        generateMockFullSimulationData() {
-            const nx = 41, ny = 41;
-            const data = [];
-            for (let i = 0; i < ny; i++) {
-                for (let j = 0; j < nx; j++) {
-                    const x = j / (nx-1) * 2, y = i / (ny-1) * 2;
-                    const cx = x - 1, cy = y - 1;
-                    const r = Math.sqrt(cx*cx + cy*cy);
-                    let u = 0, v = 0;
-                    if (i === ny-1) { u = 1; }
-                    else if (i > 0 && j > 0 && j < nx-1) {
-                        const str = Math.exp(-r) * 0.5;
-                        u = -str * Math.sin(Math.atan2(cy, cx)) * (y/2);
-                        v =  str * Math.cos(Math.atan2(cy, cx)) * (1 - x/2);
-                    }
-                    data.push({ x, y, u, v, p: Math.sin(Math.PI*x/2)*Math.cos(Math.PI*y/2)*0.1,
-                                magnitude: Math.sqrt(u*u+v*v), i, j });
-                }
-            }
-            return JSON.stringify({ config: { nx, ny, nt: 500, dx: 0.05, dy: 0.05,
-                dt: 0.001, rho: 1.0, nu: 0.1, re: 20 }, data });
-        }
-
-        generateMockSimpleData() {
-            const data = [], size = 21;
-            for (let i = 0; i < size; i++) {
-                for (let j = 0; j < size; j++) {
-                    const u = (i-10)/10, v = (j-10)/10;
-                    data.push({ x: j/10, y: i/10, u, v, p: (i-10)*0.005,
-                                magnitude: Math.sqrt(u*u+v*v), i, j });
-                }
-            }
-            return JSON.stringify(data);
+            const wasm = await WebAssembly.instantiate(bytes, imports);
+            this.wasmModule = wasm.instance.exports;
+            this.config = this._readConfig();
+            this._updateParamDisplay();
+            this.updateStatus('WASM loaded — press Play to simulate', 'ok');
+            return true;
+        } catch (e) {
+            console.error('WASM load failed:', e);
+            this.updateStatus('WASM not found (mock mode)', 'err');
+            return false;
         }
     }
 
-    /* ── Boot ── */
-    document.addEventListener('DOMContentLoaded', async () => {
-        const app = new FluidSimulationVisualizer();
-        const ok  = await app.loadWasmModule();
-        if (!ok) console.log('Using mock data for demonstration');
-    });
+    /* ── Config reader (per-solver) ── */
+    _readConfig() {
+        const w = this.wasmModule;
+        if (!w) return null;
+        const m  = SOLVER_META[this.activeSolver];
+        const nx = m.nx(w), ny = m.ny(w);
+        return {
+            nx, ny,
+            nt:  m.totalN(w),
+            dx:  w.get_dx  ? w.get_dx()  : 2.0 / (nx - 1),
+            dy:  w.get_dy  ? w.get_dy()  : 2.0 / (ny - 1),
+            dt:  w.get_dt  ? w.get_dt()  : 0.001,
+            rho: w.get_rho ? w.get_rho() : 1.0,
+            nu:  w.get_nu  ? w.get_nu()  : 0.1,
+            re:  w.get_re  ? w.get_re()  : 20.0,
+            nit: w.get_nit ? w.get_nit() : 50,
+        };
+    }
+
+    /* ── Animation controls ── */
+    playStart() {
+        if (!this.wasmModule) { this.updateStatus('WASM not loaded', 'err'); return; }
+        if (this.isPlaying) return;
+
+        // Auto-init if no steps run yet
+        const m = SOLVER_META[this.activeSolver];
+        if (m.steps(this.wasmModule) === 0) {
+            m.init(this.wasmModule);
+            this.convergenceHistory = [];
+            this.simulationData = null;
+            this._clearCanvasPixels();
+        }
+
+        this.isPlaying = true;
+        document.getElementById('btnPlay').disabled  = true;
+        document.getElementById('btnPause').disabled = false;
+        this.updateStatus(`Running ${SOLVER_META[this.activeSolver].label}…`, 'loading');
+        this._animLoop();
+    }
+
+    playPause() {
+        this.isPlaying = false;
+        if (this.animTimer) { clearTimeout(this.animTimer); this.animTimer = null; }
+        document.getElementById('btnPlay').disabled  = false;
+        document.getElementById('btnPause').disabled = true;
+        const steps = this.wasmModule ? SOLVER_META[this.activeSolver].steps(this.wasmModule) : 0;
+        this.updateStatus(`Paused at step ${steps}`, 'idle');
+    }
+
+    async playStep() {
+        if (!this.wasmModule) return;
+        if (this.isPlaying) this.playPause();
+        const m   = SOLVER_META[this.activeSolver];
+        const chunk = parseInt(document.getElementById('chunkInput').value) || 1;
+        m.runN(this.wasmModule, chunk);
+        this._afterStep();
+    }
+
+    playReset() {
+        this.playPause();
+        if (this.wasmModule) {
+            SOLVER_META[this.activeSolver].init(this.wasmModule);
+        }
+        this.convergenceHistory = [];
+        this.simulationData = null;
+        this._clearCanvasPixels();
+        this._drawConvergenceChart();
+        this._updateProgressBar();
+        ['stepsDone','divNorm','maxU','maxV','maxP','minP',
+         'centerU','centerV','centerP','centerMag',
+         'valueResidual','valuePcgIters','velMin','velMax','presMin','presMax']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+        document.getElementById('velMin').textContent  = '0.0000';
+        ['stU','stV','stDiv','stSteps'].forEach(id => { document.getElementById(id).textContent = '—'; });
+        this.updateStatus('Reset — press Play to start', 'idle');
+    }
+
+    _animLoop() {
+        if (!this.isPlaying) return;
+        const m     = SOLVER_META[this.activeSolver];
+        const total = this.config ? this.config.nt : m.totalN(this.wasmModule);
+        const done  = m.steps(this.wasmModule);
+        const chunk = Math.min(parseInt(document.getElementById('chunkInput').value) || 10,
+                               total - done);
+
+        if (chunk <= 0 || done >= total) {
+            this.playPause();
+            this.updateStatus(`${m.label} completed (${done} steps)`, 'ok');
+            return;
+        }
+
+        m.runN(this.wasmModule, chunk);
+        this._afterStep();
+        this.animTimer = setTimeout(() => this._animLoop(), 0);
+    }
+
+    _afterStep() {
+        const w  = this.wasmModule;
+        const m  = SOLVER_META[this.activeSolver];
+        const nx = this.config ? this.config.nx : m.nx(w);
+        const ny = this.config ? this.config.ny : m.ny(w);
+
+        // Record convergence
+        const step    = m.steps(w);
+        const divNorm = m.divNorm(w);
+        const extra   = m.extra(w);
+        this.convergenceHistory.push({ step, divNorm, extra });
+
+        // Read field
+        this.simulationData = this._readGrid(nx, ny);
+        this._updateParamDisplay();
+        this.visualizeResults();
+        this._drawConvergenceChart();
+        this._updateProgressBar();
+    }
+
+    _readGrid(nx, ny) {
+        const w = this.wasmModule;
+        const m = SOLVER_META[this.activeSolver];
+        const data = [];
+        for (let i = 0; i < ny; i++) {
+            for (let j = 0; j < nx; j++) {
+                const u = m.u(w, i, j);
+                const v = m.v(w, i, j);
+                const p = m.p(w, i, j);
+                let   mag = m.mag(w, i, j);
+                if (mag === null) mag = Math.sqrt(u*u + v*v);
+                data.push({
+                    x: j / (nx - 1) * 2.0,
+                    y: i / (ny - 1) * 2.0,
+                    u, v, p, magnitude: mag, i, j
+                });
+            }
+        }
+        return data;
+    }
+
+    /* ── Progress bar ── */
+    _updateProgressBar() {
+        if (!this.wasmModule || !this.config) return;
+        const m     = SOLVER_META[this.activeSolver];
+        const done  = m.steps(this.wasmModule);
+        const total = this.config.nt;
+        const pct   = total > 0 ? Math.min(100, done / total * 100) : 0;
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressLabel').textContent = `${done} / ${total}`;
+        document.getElementById('stSteps').textContent = done;
+    }
+
+    /* ── Parameter display ── */
+    _updateParamDisplay() {
+        const w = this.wasmModule;
+        const c = this.config;
+        if (!w || !c) return;
+        const m = SOLVER_META[this.activeSolver];
+
+        document.getElementById('gridSize').textContent  = `${c.nx} × ${c.ny}`;
+        document.getElementById('timeSteps').textContent = c.nt;
+        document.getElementById('reynolds').textContent  = c.re ? c.re.toFixed(1) : '—';
+        document.getElementById('timeStep').textContent  = c.dt ? c.dt.toFixed(4) : '—';
+        document.getElementById('nit').textContent       = c.nit || '—';
+
+        const steps   = m.steps(w);
+        const divNorm = m.divNorm(w);
+        const extra   = m.extra(w);
+
+        document.getElementById('stepsDone').textContent = steps;
+        document.getElementById('divNorm').textContent   = (divNorm !== null && divNorm !== undefined)
+            ? divNorm.toExponential(3) : '—';
+
+        if (m.extraLabel && m.extraLabel.includes('residual')) {
+            document.getElementById('valueResidual').textContent =
+                extra !== null ? extra.toExponential(3) : '—';
+        }
+        if (m.extraLabel && m.extraLabel.includes('PCG')) {
+            document.getElementById('valuePcgIters').textContent =
+                extra !== null ? extra : '—';
+        }
+
+        document.getElementById('stDiv').textContent = divNorm !== null
+            ? divNorm.toExponential(2) : '—';
+
+        if (this.simulationData) this._updateFieldStats();
+    }
+
+    _updateFieldStats() {
+        const w = this.wasmModule;
+        const m = SOLVER_META[this.activeSolver];
+        let maxU = 0, maxV = 0, maxP = -Infinity, minP = Infinity;
+        let cu = 0, cv = 0, cp = 0;
+        const nx = this.config.nx, ny = this.config.ny;
+        const ci = Math.floor(ny / 2), cj = Math.floor(nx / 2);
+
+        this.simulationData.forEach(pt => {
+            maxU = Math.max(maxU, Math.abs(pt.u));
+            maxV = Math.max(maxV, Math.abs(pt.v));
+            if (pt.p !== undefined) {
+                if (pt.p > maxP) maxP = pt.p;
+                if (pt.p < minP) minP = pt.p;
+            }
+            if (pt.i === ci && pt.j === cj) { cu = pt.u; cv = pt.v; cp = pt.p || 0; }
+        });
+
+        // Prefer WASM direct getters
+        const maxU2 = m.maxU(w); if (maxU2 !== null) maxU = maxU2;
+        const maxV2 = m.maxV(w); if (maxV2 !== null) maxV = maxV2;
+        const maxP2 = m.maxP(w); if (maxP2 !== null) maxP = maxP2;
+        const minP2 = m.minP(w); if (minP2 !== null) minP = minP2;
+        const cu2   = m.cu(w);   if (cu2 !== null) cu = cu2;
+        const cv2   = m.cv(w);   if (cv2 !== null) cv = cv2;
+        const cp2   = m.cp(w);   if (cp2 !== null) cp = cp2;
+
+        document.getElementById('maxU').textContent = maxU.toFixed(4);
+        document.getElementById('maxV').textContent = maxV.toFixed(4);
+        document.getElementById('maxP').textContent = isFinite(maxP) ? maxP.toFixed(4) : '—';
+        document.getElementById('minP').textContent = isFinite(minP) ? minP.toFixed(4) : '—';
+        document.getElementById('centerU').textContent   = cu.toFixed(4);
+        document.getElementById('centerV').textContent   = cv.toFixed(4);
+        document.getElementById('centerP').textContent   = cp.toFixed(4);
+        document.getElementById('centerMag').textContent = Math.sqrt(cu*cu + cv*cv).toFixed(4);
+        document.getElementById('stU').textContent = maxU.toFixed(4);
+        document.getElementById('stV').textContent = maxV.toFixed(4);
+
+        const maxMag = m.maxMag(w) || maxU;
+        document.getElementById('velMin').textContent  = '0.0000';
+        document.getElementById('velMax').textContent  = maxMag.toFixed(4);
+        if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
+        if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
+    }
+
+    /* ── Visualization ── */
+    visualizeResults() {
+        if (!this.simulationData) return;
+        this._clearCanvasPixels();
+        this.drawVelocityField();
+        this.drawPressureField();
+        if (this.showStreamlines) {
+            const nx = this.config.nx, ny = this.config.ny;
+            const grid = Array.from({ length: ny }, () => new Array(nx));
+            this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+            this.drawStreamlines(grid, nx, ny);
+        }
+    }
+
+    _clearCanvasPixels() {
+        this.velocityCtx.clearRect(0, 0, this.velocityCanvas.width, this.velocityCanvas.height);
+        this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
+    }
+
+    drawVelocityField() {
+        const canvas = this.velocityCanvas, ctx = this.velocityCtx;
+        const W = canvas.width, H = canvas.height;
+        if (!this.simulationData || !this.config) return;
+
+        const m = SOLVER_META[this.activeSolver];
+        const maxMag = (m.maxMag(this.wasmModule) || 0) ||
+            (Math.max(...this.simulationData.map(p => p.magnitude)) || 1);
+        const nx = this.config.nx, ny = this.config.ny;
+
+        const grid = Array.from({ length: ny }, () => new Array(nx));
+        this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
+        const imgData = ctx.createImageData(W, H);
+        for (let py = 0; py < H; py++) {
+            for (let px = 0; px < W; px++) {
+                const gx = px / (W - 1) * (nx - 1);
+                const gy = (1 - py / (H - 1)) * (ny - 1);
+                const j0 = Math.floor(gx), j1 = Math.min(j0+1, nx-1);
+                const i0 = Math.floor(gy), i1 = Math.min(i0+1, ny-1);
+                const tx = gx-j0, ty = gy-i0;
+                const p00=grid[i0][j0], p10=grid[i1][j0], p01=grid[i0][j1], p11=grid[i1][j1];
+                if (!p00||!p10||!p01||!p11) continue;
+                const mag = p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
+                            p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty;
+                const c = this._velColor(mag / maxMag);
+                const idx = (py*W+px)*4;
+                imgData.data[idx]=c.r; imgData.data[idx+1]=c.g;
+                imgData.data[idx+2]=c.b; imgData.data[idx+3]=255;
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        // Velocity arrows
+        const step = Math.max(1, Math.floor(nx / 20));
+        const cellPx = W / nx;
+        const arrowScale = (cellPx * step * 0.8) / (maxMag || 1);
+        ctx.strokeStyle = 'rgba(220,220,220,0.65)';
+        ctx.lineWidth = 1;
+        this.simulationData.forEach(pt => {
+            if (pt.i % step === 0 && pt.j % step === 0) {
+                const px = (pt.x / 2) * W, py = (1 - pt.y / 2) * H;
+                this._arrow(ctx, px, py, px + pt.u * arrowScale, py - pt.v * arrowScale);
+            }
+        });
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(0.75, 0.75, W-1.5, H-1.5);
+        ctx.fillStyle = 'rgba(251,191,36,0.9)';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('→ Moving Lid  u = 1', 8, 16);
+    }
+
+    drawPressureField() {
+        const ctx = this.pressureCtx;
+        const W = this.pressureCanvas.width, H = this.pressureCanvas.height;
+        if (!this.simulationData || !this.config) return;
+
+        let minP = Infinity, maxP = -Infinity;
+        this.simulationData.forEach(pt => {
+            if (pt.p > maxP) maxP = pt.p;
+            if (pt.p < minP) minP = pt.p;
+        });
+        const rangeP = maxP - minP || 1;
+        const nx = this.config.nx, ny = this.config.ny;
+
+        const grid = Array.from({ length: ny }, () => new Array(nx));
+        this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
+        const imgData = ctx.createImageData(W, H);
+        for (let py = 0; py < H; py++) {
+            for (let px = 0; px < W; px++) {
+                const gx = px / (W-1) * (nx-1);
+                const gy = (1 - py / (H-1)) * (ny-1);
+                const j0 = Math.floor(gx), j1 = Math.min(j0+1, nx-1);
+                const i0 = Math.floor(gy), i1 = Math.min(i0+1, ny-1);
+                const tx = gx-j0, ty = gy-i0;
+                const p00=grid[i0][j0], p10=grid[i1][j0], p01=grid[i0][j1], p11=grid[i1][j1];
+                if (!p00||!p10||!p01||!p11) continue;
+                const pv = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
+                           (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
+                const c = this._presColor((pv - minP) / rangeP);
+                const idx = (py*W+px)*4;
+                imgData.data[idx]=c.r; imgData.data[idx+1]=c.g;
+                imgData.data[idx+2]=c.b; imgData.data[idx+3]=255;
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(0.75, 0.75, W-1.5, H-1.5);
+    }
+
+    /* ── Convergence chart ── */
+    _drawConvergenceChart() {
+        const canvas = this.convCanvas;
+        // Match display pixels to CSS width
+        const dw = canvas.offsetWidth || 900;
+        const dh = 160;
+        if (canvas.width !== dw) canvas.width = dw;
+        const ctx = this.convCtx;
+        const W = canvas.width, H = dh;
+
+        ctx.fillStyle = '#0d1526';
+        ctx.fillRect(0, 0, W, H);
+
+        const hist = this.convergenceHistory;
+        if (hist.length < 2) {
+            ctx.fillStyle = 'rgba(148,163,184,0.3)';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No data yet — press Play', W/2, H/2);
+            ctx.textAlign = 'left';
+            return;
+        }
+
+        const ml = 52, mr = 14, mt = 14, mb = 30;
+        const pw = W - ml - mr, ph = H - mt - mb;
+
+        // y: log10(divNorm)
+        const divVals = hist.map(d => d.divNorm).filter(v => v > 0);
+        const yMin = Math.log10(Math.min(...divVals)) - 0.3;
+        const yMax = Math.log10(Math.max(...divVals)) + 0.3;
+        const xMax = hist[hist.length - 1].step;
+
+        const toX = step => ml + (xMax > 0 ? step / xMax * pw : 0);
+        const toY = val  => mt + ph - ((Math.log10(Math.max(val, 1e-15)) - yMin) / (yMax - yMin)) * ph;
+
+        // Grid lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 1;
+        for (let dec = Math.ceil(yMin); dec <= Math.floor(yMax); dec++) {
+            const y = mt + ph - ((dec - yMin) / (yMax - yMin)) * ph;
+            ctx.beginPath(); ctx.moveTo(ml, y); ctx.lineTo(ml + pw, y); ctx.stroke();
+        }
+        const nXticks = Math.min(8, hist.length);
+        for (let i = 0; i <= nXticks; i++) {
+            const x = ml + (i / nXticks) * pw;
+            ctx.beginPath(); ctx.moveTo(x, mt); ctx.lineTo(x, mt + ph); ctx.stroke();
+        }
+
+        // Axes
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(ml, mt); ctx.lineTo(ml, mt+ph); ctx.lineTo(ml+pw, mt+ph); ctx.stroke();
+
+        // y-axis labels (powers of 10)
+        ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+        for (let dec = Math.ceil(yMin); dec <= Math.floor(yMax); dec++) {
+            const y = mt + ph - ((dec - yMin) / (yMax - yMin)) * ph;
+            ctx.fillText(`1e${dec}`, ml - 4, y + 3);
+        }
+        // x-axis labels (steps)
+        ctx.textAlign = 'center';
+        for (let i = 0; i <= nXticks; i++) {
+            const s = Math.round(i / nXticks * xMax);
+            const x = ml + (i / nXticks) * pw;
+            ctx.fillText(s, x, mt + ph + 16);
+        }
+        // Axis titles
+        ctx.fillStyle = '#475569'; ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Steps', ml + pw/2, H - 2);
+        ctx.save(); ctx.translate(10, mt + ph/2); ctx.rotate(-Math.PI/2);
+        ctx.fillText('|div u|', 0, 0); ctx.restore();
+        ctx.textAlign = 'left';
+
+        // div norm line (blue)
+        ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let first = true;
+        hist.forEach(d => {
+            if (d.divNorm <= 0) return;
+            const x = toX(d.step), y = toY(d.divNorm);
+            if (y < mt - 2 || y > mt + ph + 2) return;
+            first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            first = false;
+        });
+        ctx.stroke();
+
+        // extra metric line (orange) — right y-axis, linear scale
+        const hasExtra = hist.some(d => d.extra !== null && d.extra !== undefined);
+        if (hasExtra) {
+            const extraVals = hist.map(d => d.extra).filter(v => v !== null && v !== undefined);
+            const eMin = 0, eMax = Math.max(...extraVals) * 1.1 || 1;
+            const toYE = val => mt + ph - ((val - eMin) / (eMax - eMin)) * ph;
+
+            ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath(); first = true;
+            hist.forEach(d => {
+                if (d.extra === null || d.extra === undefined) return;
+                const x = toX(d.step), y = toYE(d.extra);
+                if (y < mt - 2 || y > mt + ph + 2) return;
+                first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                first = false;
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // right y-axis labels
+            ctx.fillStyle = '#92400e'; ctx.textAlign = 'left';
+            ctx.fillText(eMax.toFixed(0), ml + pw + 2, mt + 10);
+            ctx.fillText('0', ml + pw + 2, mt + ph);
+        }
+
+        // Current value annotations
+        if (hist.length > 0) {
+            const last = hist[hist.length - 1];
+            ctx.fillStyle = '#3b82f6'; ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(last.divNorm.toExponential(2), ml + pw - 2, mt + 12);
+            if (last.extra !== null && last.extra !== undefined) {
+                ctx.fillStyle = '#f59e0b';
+                ctx.fillText(Number.isInteger(last.extra) ? last.extra : last.extra.toFixed(2),
+                             ml + pw - 2, mt + 24);
+            }
+            ctx.textAlign = 'left';
+        }
+    }
+
+    /* ── Streamlines (RK4) ── */
+    _interpVel(grid, nx, ny, x, y) {
+        const dx = 2.0 / (nx - 1), dy = 2.0 / (ny - 1);
+        const gj = x / dx, gi = y / dy;
+        if (gj < 0 || gj >= nx - 1 || gi < 0 || gi >= ny - 1) return null;
+        const j0 = Math.floor(gj), j1 = j0+1, i0 = Math.floor(gi), i1 = i0+1;
+        const tx = gj-j0, ty = gi-i0;
+        const p00=grid[i0][j0], p10=grid[i1][j0], p01=grid[i0][j1], p11=grid[i1][j1];
+        if (!p00||!p10||!p01||!p11) return null;
+        return {
+            u: p00.u*(1-tx)*(1-ty) + p01.u*tx*(1-ty) + p10.u*(1-tx)*ty + p11.u*tx*ty,
+            v: p00.v*(1-tx)*(1-ty) + p01.v*tx*(1-ty) + p10.v*(1-tx)*ty + p11.v*tx*ty,
+        };
+    }
+
+    drawStreamlines(grid, nx, ny) {
+        const ctx = this.velocityCtx;
+        const CW = this.velocityCanvas.width, CH = this.velocityCanvas.height;
+        let maxMag = 0;
+        this.simulationData.forEach(pt => { if (pt.magnitude > maxMag) maxMag = pt.magnitude; });
+        if (maxMag < 1e-12) return;
+
+        const ds = 0.04, maxSteps = 300, nS = 8;
+        ctx.save(); ctx.lineWidth = 1.2; ctx.globalAlpha = 0.75;
+
+        for (let si = 0; si < nS; si++) {
+            for (let sj = 0; sj < nS; sj++) {
+                let x = 0.15 + (1.70 / (nS-1)) * sj;
+                let y = 0.15 + (1.70 / (nS-1)) * si;
+                const v0 = this._interpVel(grid, nx, ny, x, y);
+                if (!v0) continue;
+                const m0 = Math.sqrt(v0.u*v0.u + v0.v*v0.v) / maxMag;
+                ctx.strokeStyle = `rgb(${Math.round(200-m0*100)},${Math.round(180+m0*75)},255)`;
+                ctx.beginPath();
+                ctx.moveTo(x/2*CW, (1-y/2)*CH);
+                let drawn = false;
+                for (let s = 0; s < maxSteps; s++) {
+                    const uv1 = this._interpVel(grid, nx, ny, x, y); if (!uv1) break;
+                    const m1 = Math.sqrt(uv1.u*uv1.u+uv1.v*uv1.v)||1e-12;
+                    const k1x=uv1.u/m1, k1y=uv1.v/m1;
+                    const uv2 = this._interpVel(grid, nx, ny, x+.5*ds*k1x, y+.5*ds*k1y); if (!uv2) break;
+                    const m2 = Math.sqrt(uv2.u*uv2.u+uv2.v*uv2.v)||1e-12;
+                    const k2x=uv2.u/m2, k2y=uv2.v/m2;
+                    const uv3 = this._interpVel(grid, nx, ny, x+.5*ds*k2x, y+.5*ds*k2y); if (!uv3) break;
+                    const m3 = Math.sqrt(uv3.u*uv3.u+uv3.v*uv3.v)||1e-12;
+                    const k3x=uv3.u/m3, k3y=uv3.v/m3;
+                    const uv4 = this._interpVel(grid, nx, ny, x+ds*k3x, y+ds*k3y); if (!uv4) break;
+                    const m4 = Math.sqrt(uv4.u*uv4.u+uv4.v*uv4.v)||1e-12;
+                    const k4x=uv4.u/m4, k4y=uv4.v/m4;
+                    x += ds*(k1x+2*k2x+2*k3x+k4x)/6;
+                    y += ds*(k1y+2*k2y+2*k3y+k4y)/6;
+                    if (x<0||x>2||y<0||y>2) break;
+                    ctx.lineTo(x/2*CW, (1-y/2)*CH);
+                    drawn = true;
+                }
+                if (drawn) ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+
+    /* ── Colour maps ── */
+    _velColor(t) {
+        t = Math.max(0, Math.min(1, t));
+        const s = [[0,0,128],[0,0,255],[0,255,255],[0,255,0],[255,255,0],[255,0,0]];
+        const seg = t*(s.length-1), lo = Math.floor(seg), hi = Math.min(lo+1,s.length-1), f = seg-lo;
+        return { r: Math.round(s[lo][0]+(s[hi][0]-s[lo][0])*f),
+                 g: Math.round(s[lo][1]+(s[hi][1]-s[lo][1])*f),
+                 b: Math.round(s[lo][2]+(s[hi][2]-s[lo][2])*f) };
+    }
+    _presColor(t) {
+        t = Math.max(0, Math.min(1, t));
+        const s = [[0,0,255],[0,255,255],[255,128,0],[255,0,0]];
+        const seg = t*(s.length-1), lo = Math.floor(seg), hi = Math.min(lo+1,s.length-1), f = seg-lo;
+        return { r: Math.round(s[lo][0]+(s[hi][0]-s[lo][0])*f),
+                 g: Math.round(s[lo][1]+(s[hi][1]-s[lo][1])*f),
+                 b: Math.round(s[lo][2]+(s[hi][2]-s[lo][2])*f) };
+    }
+
+    /* ── Arrow ── */
+    _arrow(ctx, x1, y1, x2, y2) {
+        const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy);
+        if (len < 2) return;
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+        const al = Math.min(6,len*.3), aa = Math.PI/6, ang = Math.atan2(dy,dx);
+        ctx.beginPath();
+        ctx.moveTo(x2,y2); ctx.lineTo(x2-al*Math.cos(ang-aa), y2-al*Math.sin(ang-aa));
+        ctx.moveTo(x2,y2); ctx.lineTo(x2-al*Math.cos(ang+aa), y2-al*Math.sin(ang+aa));
+        ctx.stroke();
+    }
+
+    /* ── CSV download ── */
+    downloadData() {
+        if (!this.simulationData) { alert('No data to download.'); return; }
+        let csv = 'i,j,x,y,u,v,magnitude,pressure\n';
+        this.simulationData.forEach(pt => {
+            csv += `${pt.i??''},${pt.j??''},${pt.x},${pt.y},${pt.u},${pt.v},${pt.magnitude},${pt.p??''}\n`;
+        });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = `${this.activeSolver}_flow_data.csv`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+    }
+}
+
+/* ── Boot ─────────────────────────────────────────────────────────────────── */
+let app;
+document.addEventListener('DOMContentLoaded', async () => {
+    app = new FluidSimulationVisualizer();
+    // Draw empty chart immediately
+    app._drawConvergenceChart();
+    const ok = await app.loadWasmModule();
+    if (!ok) {
+        document.getElementById('stMsg').textContent = 'WASM not loaded — build first with bash build_wasm.sh release';
+    }
+});
 </script>
 </body>
 </html>
