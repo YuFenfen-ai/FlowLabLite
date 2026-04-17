@@ -3,7 +3,11 @@
 FlowLabLite is a lightweight, AI-native CFD solver for 2D lid-driven cavity flow,
 written in [MoonBit](https://www.moonbitlang.com/).
 It compiles to WebAssembly (wasm-gc) and ships an interactive browser-based
-visualization page (`cmd/main/main.html`) with no runtime dependencies.
+visualization page (`cmd/main/main.html`) — including velocity heatmaps, pressure
+heatmaps, and **streamline** overlay — with no runtime dependencies.
+
+> **Online Demo**: serve the repo over HTTP and open `cmd/main/main.html` in Chrome 115+.  
+> See [INSTALL.md](INSTALL.md) for one-command local serving instructions.
 
 Four independent solvers are provided:
 
@@ -23,23 +27,35 @@ FlowLabLite/
 ├── cmd/main/
 │   ├── main.mbt          # All solver code (Chorin + SIMPLE + PCG + MAC) + WASM API
 │   ├── main_bench.mbt    # Micro-benchmark (fib baseline)
-│   ├── main_wbtest.mbt   # White-box unit tests (42 tests)
-│   ├── main.html         # Browser visualization (loads WASM, draws canvases)
-│   ├── local_viewer.html # Browser viewer for locally computed JSON results (4-solver tabs)
-│   ├── moon.pkg.json     # Package config: imports, link/exports (62 functions)
-│   └── moon.pkg          # Legacy pkg marker (is-main: true) – required by moon tool
+│   ├── main_wbtest.mbt       # White-box tests T1–T58 (original suite)
+│   ├── main_ext_wbtest.mbt   # White-box tests T59–T83 (extended suite)
+│   ├── main.html             # Browser visualization (heatmaps + streamline overlay)
+│   ├── local_viewer.html     # Browser viewer for locally computed JSON (4-solver tabs)
+│   ├── moon.pkg.json         # Package config: imports, link/exports (62 functions)
+│   └── moon.pkg              # Legacy pkg marker (is-main: true) – required by moon tool
 ├── lib/
-│   └── moon.pkg.json     # Library package placeholder
+│   └── moon.pkg.json         # Library package placeholder
 ├── docs/
-│   ├── flow.md           # Execution flow diagrams (Mermaid)
-│   ├── validation_report.md  # Numerical validation: Chorin v0.0.1 vs HEAD
+│   ├── arch.md               # System architecture: layers, modules, data flow
+│   ├── api_reference.md      # All 62 WASM export function signatures
+│   ├── dev_guide.md          # Developer guide + AI-assisted workflow examples
+│   ├── ghia_validation.md    # Numerical validation vs Ghia et al. (1982) benchmark
+│   ├── test_report_20260417.md  # Full 83-test suite validation report
+│   ├── preconditioner_theory.md # PCG preconditioner math (DILU/DIC/GAMG)
+│   ├── preconditioner_plan.md   # Preconditioner implementation plan
+│   ├── flow.md               # Execution flow diagrams (Mermaid)
+│   ├── validation_report.md  # Internal: Chorin v0.0.1 vs HEAD consistency
 │   ├── design_pcg_solver.md  # PCG solver design notes
+│   ├── cfd_terminology.md    # CFD glossary
 │   ├── dev_notes_20260415.md # Session notes: SIMPLE + timing
-│   ├── dev_notes_20260416.md # Session notes: PCG + MAC staggered grid
-│   └── cfd_terminology.md    # CFD glossary
-├── moon.mod.json         # Module manifest
-├── build_wasm.sh         # Build script that re-links WASM with -exported_functions
-└── run_local.sh          # Run solver locally + extract JSON results for viewer
+│   └── dev_notes_20260416.md # Session notes: PCG + MAC staggered grid
+├── examples/
+│   ├── 01_cli_baseline/      # Example: CLI run + JSON output
+│   └── 02_ai_workflow/       # Example: AI-assisted QUICK scheme generation
+├── INSTALL.md                # Platform-specific build & deploy instructions
+├── moon.mod.json             # Module manifest
+├── build_wasm.sh             # Build script: re-links WASM with -exported_functions
+└── run_local.sh              # Run solver locally + extract JSON results for viewer
 ```
 
 ### Key source file: `cmd/main/main.mbt`
@@ -122,12 +138,12 @@ cd FlowLabLite
 ### 3. Run the tests
 
 ```bash
-moon test --target wasm    # runs all 42 tests (all four solvers)
+moon test --target wasm    # runs all 83 tests (original T1–T58 + extended T59–T83)
 ```
 
 Expected output:
 ```
-Total tests: 42, passed: 42, failed: 0.
+Total tests: 83, passed: 83, failed: 0.
 ```
 
 ### 4. Build the WASM binary
@@ -294,10 +310,14 @@ Staggered arrangement with PCG pressure solve:
 ### Running tests
 
 ```bash
-moon test --target wasm      # 42 tests on wasm target
+moon test --target wasm      # 83 tests on wasm target
 ```
 
-### Test summary (42 tests, all passing)
+### Test summary (83 tests, all passing)
+
+Two test files are discovered automatically:
+- `cmd/main/main_wbtest.mbt` — T1–T58 (original functional tests)
+- `cmd/main/main_ext_wbtest.mbt` — T59–T83 (extended suite: unit / integration / system / regression)
 
 #### Chorin solver (T1–T16)
 
@@ -360,6 +380,28 @@ moon test --target wasm      # 42 tests on wasm target
 | 40 | `mac_boundary_v` | No-slip: v=0 at bottom wall and left/right walls |
 | 41 | `mac_divergence_near_zero` | After 50 steps, divergence norm (interior cells) < 1×10⁻⁴ |
 | 42 | `mac_vortex_formation` | After 200 steps: negative u at centre; divergence < 1×10⁻⁴ |
+
+#### Preconditioner tests (T43–T58)
+
+| Range | Group | Validates |
+|---|---|---|
+| T43–T48 | DILU preconditioner | Modified diagonal, BC preservation, < 1% error vs Jacobi PCG |
+| T49–T54 | DIC preconditioner | IC(0) Cholesky, BC preservation, < 1% error vs Jacobi PCG |
+| T55–T58 | GAMG preconditioner | 2-level V-cycle, BC preservation, < 1% error vs Jacobi PCG |
+
+#### Extended suite (T59–T83) — `main_ext_wbtest.mbt`
+
+| Range | Category | Validates |
+|---|---|---|
+| T59–T60 | Unit — array utilities | Deep-copy isolation, row independence |
+| T61–T63 | Unit — Laplacian operator | x²/y² polynomial exactness, harmonic zero |
+| T64–T65 | Unit — boundary conditions | Idempotency, coarse-grid apply |
+| T66–T67 | Unit — RHS source term | Divergence-free oracle, formula verification |
+| T68–T70 | Unit — GAMG sub-components | Prolongate constant field, restrict normalisation /4, smoother descent |
+| T71–T74 | Integration — PCG residual | All 4 preconditioners satisfy ‖r‖/‖b‖ < 10·tol after solve |
+| T75 | Integration — cross-preconditioner | Agreement < 1% on non-uniform polynomial RHS |
+| T76–T79 | System — physics | SND sign convention, determinism, additive steps, SIMPLE mass conservation |
+| T80–T83 | Regression — numerical | Modified-diag range, MAC divergence @200 steps, coarse Laplacian, vortex sign |
 
 ### Physical validation
 
