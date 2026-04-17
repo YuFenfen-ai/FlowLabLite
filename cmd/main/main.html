@@ -199,6 +199,28 @@
         .cb-label { font-size: 10px; font-family: monospace; color: var(--c-muted); min-width: 56px; }
         .cb-label.right { text-align: right; }
 
+        /* colormap range row */
+        .range-row {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 10px; color: var(--c-muted); margin-top: 3px;
+        }
+        .range-row label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+        .range-input {
+            width: 62px; padding: 2px 5px;
+            background: var(--c-surface2); border: 1px solid var(--c-border);
+            border-radius: 4px; color: var(--c-text);
+            font-size: 10px; font-family: monospace; outline: none;
+        }
+        .range-input:focus { border-color: var(--c-accent); }
+        .range-input:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        /* u/v section divider label */
+        .uv-divider {
+            font-size: 10px; color: var(--c-muted); padding: 2px 0;
+            border-top: 1px solid var(--c-border); margin-top: 2px;
+            letter-spacing: 0.04em;
+        }
+
         /* ── Convergence chart panel ── */
         .chart-panel {
             background: var(--c-surface);
@@ -351,6 +373,14 @@
 
     <div class="tsep"></div>
 
+    <!-- u/v component maps -->
+    <label class="tlabel" style="cursor:pointer;display:flex;align-items:center;gap:4px"
+           title="Show separate u (x) and v (y) velocity component maps">
+        <input type="checkbox" id="showUVChk" onchange="app.toggleUV()"> u/v fields
+    </label>
+
+    <div class="tsep"></div>
+
     <!-- Overlay -->
     <button class="btn" id="toggleStreamlines" title="Streamline overlay  [S]">〜 Streamlines</button>
 
@@ -380,6 +410,15 @@
                          style="background:linear-gradient(to right,#000080,#0000ff,#00ffff,#00ff00,#ffff00,#ff0000)"></div>
                     <span class="cb-label right" id="velMax">—</span>
                 </div>
+                <div class="range-row">
+                    <label><input type="checkbox" id="velAutoChk" checked onchange="app.onVelRangeToggle()"> Auto</label>
+                    <span>Min</span>
+                    <input class="range-input" type="number" id="velManMin" step="0.01" placeholder="min" disabled>
+                    <span>Max</span>
+                    <input class="range-input" type="number" id="velManMax" step="0.01" placeholder="max" disabled>
+                    <button class="btn" id="velApply" style="padding:2px 7px;font-size:10px"
+                            onclick="app.applyVelRange()" disabled>Apply</button>
+                </div>
             </div>
 
             <div class="canvas-panel">
@@ -393,9 +432,58 @@
                          style="background:linear-gradient(to right,#0000ff,#00ffff,#ff8000,#ff0000)"></div>
                     <span class="cb-label right" id="presMax">—</span>
                 </div>
+                <div class="range-row">
+                    <label><input type="checkbox" id="presAutoChk" checked onchange="app.onPresRangeToggle()"> Auto</label>
+                    <span>Min</span>
+                    <input class="range-input" type="number" id="presManMin" step="0.001" placeholder="min" disabled>
+                    <span>Max</span>
+                    <input class="range-input" type="number" id="presManMax" step="0.001" placeholder="max" disabled>
+                    <button class="btn" id="presApply" style="padding:2px 7px;font-size:10px"
+                            onclick="app.applyPresRange()" disabled>Apply</button>
+                </div>
             </div>
 
         </div><!-- /canvas-grid -->
+
+        <!-- u / v component panels (hidden until toggled) -->
+        <div class="uv-divider" id="uvLabel" style="display:none">
+            u / v component fields — diverging colormap: blue = negative · white = zero · red = positive
+        </div>
+        <div class="canvas-grid" id="uvGrid" style="display:none">
+
+            <div class="canvas-panel">
+                <div class="canvas-panel-title">u Velocity (x-component)</div>
+                <div class="canvas-wrapper">
+                    <canvas id="uCanvas" width="500" height="500"></canvas>
+                </div>
+                <div class="colorbar-strip">
+                    <span class="cb-label" id="uMin">—</span>
+                    <div class="colorbar-bar"
+                         style="background:linear-gradient(to right,#0055ff,#aaccff,#ffffff,#ffaaaa,#ff2200)"></div>
+                    <span class="cb-label right" id="uMax">—</span>
+                </div>
+                <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
+                    Blue = leftward (u &lt; 0) · Red = rightward (u &gt; 0)
+                </div>
+            </div>
+
+            <div class="canvas-panel">
+                <div class="canvas-panel-title">v Velocity (y-component)</div>
+                <div class="canvas-wrapper">
+                    <canvas id="vCanvas" width="500" height="500"></canvas>
+                </div>
+                <div class="colorbar-strip">
+                    <span class="cb-label" id="vMin">—</span>
+                    <div class="colorbar-bar"
+                         style="background:linear-gradient(to right,#0055ff,#aaccff,#ffffff,#ffaaaa,#ff2200)"></div>
+                    <span class="cb-label right" id="vMax">—</span>
+                </div>
+                <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
+                    Blue = downward (v &lt; 0) · Red = upward (v &gt; 0)
+                </div>
+            </div>
+
+        </div><!-- /uvGrid -->
 
         <!-- Convergence chart -->
         <div class="chart-panel">
@@ -478,6 +566,43 @@
                 <div class="prow"><span class="pk">v velocity</span>   <span class="pv" id="centerV">—</span></div>
                 <div class="prow"><span class="pk">Pressure p</span>   <span class="pv" id="centerP">—</span></div>
                 <div class="prow"><span class="pk">|V| magnitude</span><span class="pv" id="centerMag">—</span></div>
+            </div>
+        </div>
+
+        <!-- Display / Run Settings -->
+        <div class="cp-section collapsed" id="secSettings">
+            <div class="cp-head" onclick="toggleSec('secSettings')">
+                Run &amp; Display Settings <span class="cp-arrow">▾</span>
+            </div>
+            <div class="cp-body" style="display:flex;flex-direction:column;gap:8px">
+                <!-- Fixed compile-time params (read-only) -->
+                <div style="font-size:10px;color:#475569;line-height:1.5;border-bottom:1px solid var(--c-border);padding-bottom:6px">
+                    Re, grid size, and dt are <strong style="color:#64748b">compile-time constants</strong>.
+                    To change them, edit <code style="background:var(--c-surface2);padding:1px 3px;border-radius:2px">cmd/main/main.mbt</code>
+                    and rebuild.
+                </div>
+                <div class="prow"><span class="pk">Re (fixed)</span>   <span class="pv dim" id="pRe">20.0</span></div>
+                <div class="prow"><span class="pk">ν (fixed)</span>    <span class="pv dim" id="pNu">0.100</span></div>
+                <div class="prow"><span class="pk">dt (fixed)</span>   <span class="pv dim" id="pDt">0.001</span></div>
+                <div class="prow"><span class="pk">ρ (fixed)</span>    <span class="pv dim" id="pRho">1.0</span></div>
+                <div class="prow"><span class="pk">Grid (fixed)</span> <span class="pv dim" id="pGrid">41 × 41</span></div>
+                <!-- Editable: total steps override -->
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
+                    <span class="pk">Total steps override</span>
+                    <input class="range-input" type="number" id="totalStepsInput"
+                           style="width:70px" min="1" max="5000" placeholder="auto"
+                           title="Leave blank to use solver default (500 for Chorin/PCG/MAC, 100 for SIMPLE)">
+                </div>
+                <div style="font-size:10px;color:#475569">
+                    Leave blank to use solver default (500 / 100 for SIMPLE).
+                </div>
+                <!-- Editable: arrow density -->
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
+                    <span class="pk">Arrow grid divisor</span>
+                    <input class="range-input" type="number" id="arrowDivInput"
+                           style="width:52px" min="5" max="50" value="20"
+                           title="Arrows shown every floor(nx / N) nodes. Larger = fewer arrows.">
+                </div>
             </div>
         </div>
 
@@ -641,10 +766,19 @@ class FluidSimulationVisualizer {
 
         this.velocityCanvas  = document.getElementById('velocityCanvas');
         this.pressureCanvas  = document.getElementById('pressureCanvas');
+        this.uCanvas         = document.getElementById('uCanvas');
+        this.vCanvas         = document.getElementById('vCanvas');
         this.convCanvas      = document.getElementById('convergenceCanvas');
         this.velocityCtx     = this.velocityCanvas.getContext('2d');
         this.pressureCtx     = this.pressureCanvas.getContext('2d');
+        this.uCtx            = this.uCanvas.getContext('2d');
+        this.vCtx            = this.vCanvas.getContext('2d');
         this.convCtx         = this.convCanvas.getContext('2d');
+
+        // colormap range overrides
+        this.velMin = null; this.velMax = null;
+        this.presMin = null; this.presMax = null;
+        this.showUV  = false;
 
         this._bindEvents();
         this._updateSolverUI();
@@ -844,7 +978,9 @@ class FluidSimulationVisualizer {
     _animLoop() {
         if (!this.isPlaying) return;
         const m     = SOLVER_META[this.activeSolver];
-        const total = this.config ? this.config.nt : m.totalN(this.wasmModule);
+        const overrideN = parseInt(document.getElementById('totalStepsInput')?.value) || 0;
+        const total = overrideN > 0 ? overrideN
+                    : (this.config ? this.config.nt : m.totalN(this.wasmModule));
         const done  = m.steps(this.wasmModule);
         const chunk = Math.min(parseInt(document.getElementById('chunkInput').value) || 10,
                                total - done);
@@ -988,10 +1124,30 @@ class FluidSimulationVisualizer {
         document.getElementById('stV').textContent = maxV.toFixed(4);
 
         const maxMag = m.maxMag(w) || maxU;
-        document.getElementById('velMin').textContent  = '0.0000';
-        document.getElementById('velMax').textContent  = maxMag.toFixed(4);
-        if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
-        if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
+        if (this.velMax === null) {
+            document.getElementById('velMin').textContent  = '0.0000';
+            document.getElementById('velMax').textContent  = maxMag.toFixed(4);
+        }
+        if (this.presMin === null && isFinite(minP))
+            document.getElementById('presMin').textContent = minP.toFixed(4);
+        if (this.presMax === null && isFinite(maxP))
+            document.getElementById('presMax').textContent = maxP.toFixed(4);
+
+        // u/v colorbar labels
+        document.getElementById('uMin').textContent = (-maxU).toFixed(4);
+        document.getElementById('uMax').textContent =  maxU.toFixed(4);
+        document.getElementById('vMin').textContent = (-maxV).toFixed(4);
+        document.getElementById('vMax').textContent =  maxV.toFixed(4);
+
+        // parameter settings panel
+        const c = this.config;
+        if (c) {
+            document.getElementById('pRe').textContent  = c.re ? c.re.toFixed(1)  : '—';
+            document.getElementById('pNu').textContent  = c.nu ? c.nu.toFixed(3)  : '—';
+            document.getElementById('pDt').textContent  = c.dt ? c.dt.toFixed(4)  : '—';
+            document.getElementById('pRho').textContent = c.rho ? c.rho.toFixed(1) : '—';
+            document.getElementById('pGrid').textContent = `${c.nx} × ${c.ny}`;
+        }
     }
 
     /* ── Visualization ── */
@@ -1006,11 +1162,17 @@ class FluidSimulationVisualizer {
             this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
             this.drawStreamlines(grid, nx, ny);
         }
+        if (this.showUV) {
+            this.drawUField();
+            this.drawVField();
+        }
     }
 
     _clearCanvasPixels() {
         this.velocityCtx.clearRect(0, 0, this.velocityCanvas.width, this.velocityCanvas.height);
         this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
+        this.uCtx.clearRect(0, 0, this.uCanvas.width, this.uCanvas.height);
+        this.vCtx.clearRect(0, 0, this.vCanvas.width, this.vCanvas.height);
     }
 
     drawVelocityField() {
@@ -1019,8 +1181,10 @@ class FluidSimulationVisualizer {
         if (!this.simulationData || !this.config) return;
 
         const m = SOLVER_META[this.activeSolver];
-        const maxMag = (m.maxMag(this.wasmModule) || 0) ||
+        const autoMaxMag = (m.maxMag(this.wasmModule) || 0) ||
             (Math.max(...this.simulationData.map(p => p.magnitude)) || 1);
+        const maxMag = (this.velMax !== null) ? this.velMax : autoMaxMag;
+        const minMagClamp = (this.velMin !== null) ? this.velMin : 0;
         const nx = this.config.nx, ny = this.config.ny;
 
         const grid = Array.from({ length: ny }, () => new Array(nx));
@@ -1038,7 +1202,9 @@ class FluidSimulationVisualizer {
                 if (!p00||!p10||!p01||!p11) continue;
                 const mag = p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
                             p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty;
-                const c = this._velColor(mag / maxMag);
+                const t  = maxMag > minMagClamp
+                    ? (mag - minMagClamp) / (maxMag - minMagClamp) : 0;
+                const c = this._velColor(t);
                 const idx = (py*W+px)*4;
                 imgData.data[idx]=c.r; imgData.data[idx+1]=c.g;
                 imgData.data[idx+2]=c.b; imgData.data[idx+3]=255;
@@ -1047,7 +1213,8 @@ class FluidSimulationVisualizer {
         ctx.putImageData(imgData, 0, 0);
 
         // Velocity arrows
-        const step = Math.max(1, Math.floor(nx / 20));
+        const arrowDiv = parseInt(document.getElementById('arrowDivInput')?.value) || 20;
+        const step = Math.max(1, Math.floor(nx / arrowDiv));
         const cellPx = W / nx;
         const arrowScale = (cellPx * step * 0.8) / (maxMag || 1);
         ctx.strokeStyle = 'rgba(220,220,220,0.65)';
@@ -1071,11 +1238,13 @@ class FluidSimulationVisualizer {
         const W = this.pressureCanvas.width, H = this.pressureCanvas.height;
         if (!this.simulationData || !this.config) return;
 
-        let minP = Infinity, maxP = -Infinity;
+        let autoMinP = Infinity, autoMaxP = -Infinity;
         this.simulationData.forEach(pt => {
-            if (pt.p > maxP) maxP = pt.p;
-            if (pt.p < minP) minP = pt.p;
+            if (pt.p > autoMaxP) autoMaxP = pt.p;
+            if (pt.p < autoMinP) autoMinP = pt.p;
         });
+        const minP  = (this.presMin !== null) ? this.presMin : autoMinP;
+        const maxP  = (this.presMax !== null) ? this.presMax : autoMaxP;
         const rangeP = maxP - minP || 1;
         const nx = this.config.nx, ny = this.config.ny;
 
@@ -1103,6 +1272,106 @@ class FluidSimulationVisualizer {
         ctx.putImageData(imgData, 0, 0);
         ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5;
         ctx.strokeRect(0.75, 0.75, W-1.5, H-1.5);
+    }
+
+    /* ── u/v component fields ── */
+    toggleUV() {
+        this.showUV = document.getElementById('showUVChk').checked;
+        document.getElementById('uvGrid').style.display  = this.showUV ? '' : 'none';
+        document.getElementById('uvLabel').style.display = this.showUV ? '' : 'none';
+        if (this.showUV && this.simulationData) {
+            this.drawUField();
+            this.drawVField();
+        } else {
+            this.uCtx.clearRect(0, 0, this.uCanvas.width, this.uCanvas.height);
+            this.vCtx.clearRect(0, 0, this.vCanvas.width, this.vCanvas.height);
+        }
+    }
+
+    _drawComponentField(ctx, canvas, getVal) {
+        const W = canvas.width, H = canvas.height;
+        if (!this.simulationData || !this.config) return;
+        const nx = this.config.nx, ny = this.config.ny;
+
+        // Build grid
+        const grid = Array.from({ length: ny }, () => new Array(nx));
+        this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
+        // Find symmetric range centered on 0
+        let absMax = 0;
+        this.simulationData.forEach(pt => { absMax = Math.max(absMax, Math.abs(getVal(pt))); });
+        if (absMax < 1e-12) absMax = 1;
+
+        const imgData = ctx.createImageData(W, H);
+        for (let py = 0; py < H; py++) {
+            for (let px = 0; px < W; px++) {
+                const gx = px / (W-1) * (nx-1);
+                const gy = (1 - py / (H-1)) * (ny-1);
+                const j0 = Math.floor(gx), j1 = Math.min(j0+1, nx-1);
+                const i0 = Math.floor(gy), i1 = Math.min(i0+1, ny-1);
+                const tx = gx-j0, ty = gy-i0;
+                const p00=grid[i0][j0], p10=grid[i1][j0], p01=grid[i0][j1], p11=grid[i1][j1];
+                if (!p00||!p10||!p01||!p11) continue;
+                const val = getVal(p00)*(1-tx)*(1-ty) + getVal(p01)*tx*(1-ty) +
+                            getVal(p10)*(1-tx)*ty     + getVal(p11)*tx*ty;
+                // t=0 → blue (negative), t=0.5 → white (zero), t=1 → red (positive)
+                const t = (val + absMax) / (2 * absMax);
+                const c = this._divColor(t);
+                const idx = (py*W+px)*4;
+                imgData.data[idx]=c.r; imgData.data[idx+1]=c.g;
+                imgData.data[idx+2]=c.b; imgData.data[idx+3]=255;
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(0.75, 0.75, W-1.5, H-1.5);
+    }
+
+    drawUField() {
+        this._drawComponentField(this.uCtx, this.uCanvas, pt => pt.u);
+    }
+    drawVField() {
+        this._drawComponentField(this.vCtx, this.vCanvas, pt => pt.v);
+    }
+
+    /* ── Colormap range controls ── */
+    onVelRangeToggle() {
+        const auto = document.getElementById('velAutoChk').checked;
+        ['velManMin','velManMax','velApply'].forEach(id => {
+            document.getElementById(id).disabled = auto;
+        });
+        if (auto) {
+            this.velMin = null; this.velMax = null;
+            if (this.simulationData) this.visualizeResults();
+        }
+    }
+    applyVelRange() {
+        const mn = parseFloat(document.getElementById('velManMin').value);
+        const mx = parseFloat(document.getElementById('velManMax').value);
+        if (!isNaN(mn)) this.velMin = mn;
+        if (!isNaN(mx)) this.velMax = mx;
+        document.getElementById('velMin').textContent = isNaN(mn) ? '—' : mn.toFixed(4);
+        document.getElementById('velMax').textContent = isNaN(mx) ? '—' : mx.toFixed(4);
+        if (this.simulationData) this.visualizeResults();
+    }
+    onPresRangeToggle() {
+        const auto = document.getElementById('presAutoChk').checked;
+        ['presManMin','presManMax','presApply'].forEach(id => {
+            document.getElementById(id).disabled = auto;
+        });
+        if (auto) {
+            this.presMin = null; this.presMax = null;
+            if (this.simulationData) this.visualizeResults();
+        }
+    }
+    applyPresRange() {
+        const mn = parseFloat(document.getElementById('presManMin').value);
+        const mx = parseFloat(document.getElementById('presManMax').value);
+        if (!isNaN(mn)) this.presMin = mn;
+        if (!isNaN(mx)) this.presMax = mx;
+        document.getElementById('presMin').textContent = isNaN(mn) ? '—' : mn.toFixed(4);
+        document.getElementById('presMax').textContent = isNaN(mx) ? '—' : mx.toFixed(4);
+        if (this.simulationData) this.visualizeResults();
     }
 
     /* ── Convergence chart ── */
@@ -1309,6 +1578,22 @@ class FluidSimulationVisualizer {
         return { r: Math.round(s[lo][0]+(s[hi][0]-s[lo][0])*f),
                  g: Math.round(s[lo][1]+(s[hi][1]-s[lo][1])*f),
                  b: Math.round(s[lo][2]+(s[hi][2]-s[lo][2])*f) };
+    }
+
+    /* Diverging: blue (t=0) → white (t=0.5) → red (t=1) */
+    _divColor(t) {
+        t = Math.max(0, Math.min(1, t));
+        if (t < 0.5) {
+            const f = t / 0.5;   // 0→1 as t goes 0→0.5
+            return { r: Math.round(0   + 255*f),
+                     g: Math.round(85  + 170*f),
+                     b: Math.round(255         ) };
+        } else {
+            const f = (t - 0.5) / 0.5;  // 0→1 as t goes 0.5→1
+            return { r: Math.round(255         ),
+                     g: Math.round(255 - 170*f ),
+                     b: Math.round(255 - 255*f ) };
+        }
     }
 
     /* ── Arrow ── */
