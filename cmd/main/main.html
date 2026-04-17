@@ -69,6 +69,15 @@
         .secondary-btn:hover {
             background-color: #545b62;
         }
+
+        .secondary-btn.active {
+            background-color: #17a2b8;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .secondary-btn.active:hover {
+            background-color: #138496;
+        }
         
         .visualization-container {
             display: flex;
@@ -192,6 +201,7 @@
             <button id="runSimpleTest" class="secondary-btn" title="Shortcut: Q">Quick Preview (50 steps)</button>
             <button id="clearCanvas" class="secondary-btn" title="Shortcut: C">Clear</button>
             <button id="downloadData" class="secondary-btn" title="Shortcut: D">Download CSV</button>
+            <button id="toggleStreamlines" class="secondary-btn" title="Shortcut: S">Streamlines</button>
         </div>
         
         <div id="status" class="status loading">Ready to start simulation</div>
@@ -283,7 +293,7 @@
                         Solver: MoonBit → WebAssembly<br>
                         Author: Fenfen Yu (余芬芬)<br>
                         License: Apache-2.0<br>
-                        Keyboard: F=full, Q=quick, C=clear, D=download
+                        Keyboard: F=full, Q=quick, C=clear, D=download, S=streamlines
                     </p>
                 </div>
             </div>
@@ -299,6 +309,7 @@
                 this.wasmModule = null;
                 this.simulationData = null;
                 this.config = null;
+                this.showStreamlines = false;
                 this.velocityCanvas = document.getElementById('velocityCanvas');
                 this.pressureCanvas = document.getElementById('pressureCanvas');
                 this.velocityCtx = this.velocityCanvas.getContext('2d');
@@ -313,6 +324,12 @@
                 document.getElementById('runSimpleTest').addEventListener('click', () => this.runSimpleTest());
                 document.getElementById('clearCanvas').addEventListener('click', () => this.clearCanvases());
                 document.getElementById('downloadData').addEventListener('click', () => this.downloadData());
+                document.getElementById('toggleStreamlines').addEventListener('click', () => {
+                    this.showStreamlines = !this.showStreamlines;
+                    const btn = document.getElementById('toggleStreamlines');
+                    btn.classList.toggle('active', this.showStreamlines);
+                    if (this.simulationData) this.visualizeResults();
+                });
                 // Keyboard shortcuts
                 document.addEventListener('keydown', (e) => {
                     if (e.target.tagName === 'INPUT') return;
@@ -321,6 +338,7 @@
                         case 'Q': this.runSimpleTest();    break;
                         case 'C': this.clearCanvases();    break;
                         case 'D': this.downloadData();     break;
+                        case 'S': document.getElementById('toggleStreamlines').click(); break;
                     }
                 });
             }
@@ -630,6 +648,13 @@
                 this.clearCanvases();
                 this.drawVelocityField();
                 this.drawPressureField();
+                if (this.showStreamlines) {
+                    const nx = this.config ? this.config.nx : 41;
+                    const ny = this.config ? this.config.ny : 41;
+                    const grid = Array.from({ length: ny }, () => new Array(nx));
+                    this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+                    this.drawStreamlines(grid, nx, ny);
+                }
             }
 
             clearCanvases() {
@@ -853,6 +878,104 @@
                 ctx.moveTo(x2, y2);
                 ctx.lineTo(x4, y4);
                 ctx.stroke();
+            }
+
+            /**
+             * Bilinear-interpolate (u, v) at physical position (x, y) ∈ [0,2]×[0,2].
+             * Returns {u, v} or null if out of domain.
+             */
+            _interpVelocity(grid, nx, ny, x, y) {
+                const dx = 2.0 / (nx - 1);
+                const dy = 2.0 / (ny - 1);
+                const gj = x / dx;
+                const gi = y / dy;
+                if (gj < 0 || gj >= nx - 1 || gi < 0 || gi >= ny - 1) return null;
+                const j0 = Math.floor(gj), j1 = j0 + 1;
+                const i0 = Math.floor(gi), i1 = i0 + 1;
+                const tx = gj - j0, ty = gi - i0;
+                const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                if (!p00 || !p10 || !p01 || !p11) return null;
+                const u = p00.u*(1-tx)*(1-ty) + p01.u*tx*(1-ty) +
+                          p10.u*(1-tx)*ty     + p11.u*tx*ty;
+                const v = p00.v*(1-tx)*(1-ty) + p01.v*tx*(1-ty) +
+                          p10.v*(1-tx)*ty     + p11.v*tx*ty;
+                return { u, v };
+            }
+
+            /**
+             * Draw streamlines on the velocity canvas using RK4 integration.
+             * Seeds: 8×8 interior grid. Each streamline: up to 300 RK4 steps.
+             */
+            drawStreamlines(grid, nx, ny) {
+                const ctx = this.velocityCtx;
+                const cw = this.velocityCanvas.width;
+                const ch = this.velocityCanvas.height;
+
+                // Normalise velocity so step length is grid-cell-independent
+                let maxMag = 0;
+                this.simulationData.forEach(pt => { if (pt.magnitude > maxMag) maxMag = pt.magnitude; });
+                if (maxMag < 1e-12) return;
+
+                const ds = 0.04;          // arc-length step in physical units
+                const maxSteps = 300;     // steps per streamline
+                const nSeeds = 8;         // seeds per side → 64 total
+
+                ctx.save();
+                ctx.lineWidth = 1.2;
+                ctx.globalAlpha = 0.75;
+
+                for (let si = 0; si < nSeeds; si++) {
+                    for (let sj = 0; sj < nSeeds; sj++) {
+                        // Seed positions: uniformly spaced in [0.15, 1.85]×[0.15, 1.85]
+                        let x = 0.15 + (1.70 / (nSeeds - 1)) * sj;
+                        let y = 0.15 + (1.70 / (nSeeds - 1)) * si;
+
+                        // Colour seed by initial velocity magnitude for visual contrast
+                        const v0 = this._interpVelocity(grid, nx, ny, x, y);
+                        if (!v0) continue;
+                        const m0 = Math.sqrt(v0.u * v0.u + v0.v * v0.v) / maxMag;
+                        const g = Math.round(180 + m0 * 75);
+                        ctx.strokeStyle = `rgb(${Math.round(200 - m0*100)},${g},255)`;
+
+                        ctx.beginPath();
+                        // Canvas pixel from physical coords: px = x/2*cw, py = (1-y/2)*ch
+                        ctx.moveTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
+
+                        let drawing = false;
+                        for (let step = 0; step < maxSteps; step++) {
+                            // RK4 with normalised velocity field (unit speed)
+                            const uv1 = this._interpVelocity(grid, nx, ny, x, y);
+                            if (!uv1) break;
+                            const m1 = Math.sqrt(uv1.u*uv1.u + uv1.v*uv1.v) || 1e-12;
+                            const k1x = uv1.u / m1, k1y = uv1.v / m1;
+
+                            const uv2 = this._interpVelocity(grid, nx, ny, x + 0.5*ds*k1x, y + 0.5*ds*k1y);
+                            if (!uv2) break;
+                            const m2 = Math.sqrt(uv2.u*uv2.u + uv2.v*uv2.v) || 1e-12;
+                            const k2x = uv2.u / m2, k2y = uv2.v / m2;
+
+                            const uv3 = this._interpVelocity(grid, nx, ny, x + 0.5*ds*k2x, y + 0.5*ds*k2y);
+                            if (!uv3) break;
+                            const m3 = Math.sqrt(uv3.u*uv3.u + uv3.v*uv3.v) || 1e-12;
+                            const k3x = uv3.u / m3, k3y = uv3.v / m3;
+
+                            const uv4 = this._interpVelocity(grid, nx, ny, x + ds*k3x, y + ds*k3y);
+                            if (!uv4) break;
+                            const m4 = Math.sqrt(uv4.u*uv4.u + uv4.v*uv4.v) || 1e-12;
+                            const k4x = uv4.u / m4, k4y = uv4.v / m4;
+
+                            x += ds * (k1x + 2*k2x + 2*k3x + k4x) / 6;
+                            y += ds * (k1y + 2*k2y + 2*k3y + k4y) / 6;
+
+                            if (x < 0 || x > 2 || y < 0 || y > 2) break;
+                            ctx.lineTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
+                            drawing = true;
+                        }
+                        if (drawing) ctx.stroke();
+                    }
+                }
+                ctx.restore();
             }
 
             downloadData() {
