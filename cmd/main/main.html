@@ -5,1017 +5,1051 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="FlowLabLite: 2D lid-driven cavity CFD solver written in MoonBit, compiled to WebAssembly for browser visualization.">
     <meta name="author" content="Fenfen Yu (余芬芬)">
-    <title>FlowLabLite – 2D Lid-Driven Cavity Flow (MoonBit / WebAssembly)</title>
+    <title>FlowLabLite – Live Solver (MoonBit / WebAssembly)</title>
     <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --c-bg:       #0f172a;
+            --c-surface:  #1e293b;
+            --c-surface2: #334155;
+            --c-border:   rgba(255,255,255,0.12);
+            --c-text:     #e2e8f0;
+            --c-muted:    #94a3b8;
+            --c-accent:   #3b82f6;
+            --c-success:  #22c55e;
+            --c-danger:   #ef4444;
+        }
+
         body {
-            font-family: 'Arial', sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f0f2f5;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-        }
-        
-        .controls {
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background: var(--c-bg);
+            color: var(--c-text);
+            height: 100vh;
             display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
+            flex-direction: column;
+            overflow: hidden;
         }
-        
-        button {
+
+        /* ── Header ── */
+        header {
+            background: var(--c-surface);
+            border-bottom: 1px solid var(--c-border);
             padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.3s;
-        }
-        
-        .primary-btn {
-            background-color: #007bff;
-            color: white;
-        }
-        
-        .primary-btn:hover {
-            background-color: #0056b3;
-        }
-        
-        .secondary-btn {
-            background-color: #6c757d;
-            color: white;
-        }
-        
-        .secondary-btn:hover {
-            background-color: #545b62;
-        }
-
-        .secondary-btn.active {
-            background-color: #17a2b8;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .secondary-btn.active:hover {
-            background-color: #138496;
-        }
-        
-        .visualization-container {
             display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 12px;
         }
-        
-        .canvas-container {
+        .header-brand { display: flex; align-items: center; gap: 10px; }
+        .brand-icon {
+            width: 32px; height: 32px;
+            background: var(--c-accent);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+        }
+        .header-title {
+            font-size: 15px; font-weight: 700;
+            background: linear-gradient(90deg, #3b82f6, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header-sub { font-size: 11px; color: var(--c-muted); }
+        .status-pill {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px; color: var(--c-muted);
+            background: var(--c-surface2);
+            border: 1px solid var(--c-border);
+            border-radius: 99px;
+            padding: 4px 12px;
+        }
+        .dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--c-success);
+            box-shadow: 0 0 5px var(--c-success);
+        }
+        .dot.idle    { background: var(--c-muted); box-shadow: none; }
+        .dot.loading { background: #f59e0b; box-shadow: 0 0 5px #f59e0b;
+                       animation: pulse 1s infinite alternate; }
+        .dot.error   { background: var(--c-danger); box-shadow: 0 0 5px var(--c-danger); }
+        @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+
+        /* ── Toolbar ── */
+        .toolbar {
+            background: var(--c-surface);
+            border-bottom: 1px solid var(--c-border);
+            padding: 7px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .tsep { width: 1px; height: 22px; background: var(--c-border); }
+        .tlabel { font-size: 11px; color: var(--c-muted); white-space: nowrap; }
+
+        /* buttons */
+        .btn {
+            padding: 5px 12px;
+            border: 1px solid var(--c-border);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            background: var(--c-surface2);
+            color: var(--c-text);
+            transition: background 0.15s, border-color 0.15s;
+            white-space: nowrap;
+            outline: none;
+        }
+        .btn:hover { background: #3b4a63; }
+        .btn.primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
+        .btn.primary:hover { background: #2563eb; }
+        .btn.active  { background: #0e7490; border-color: #06b6d4; color: #fff; }
+        .btn.active:hover { background: #0891b2; }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        /* ── Main layout ── */
+        .main {
+            display: flex;
             flex: 1;
-            text-align: center;
-            background: #fafafa;
-            border-radius: 8px;
-            padding: 15px;
+            overflow: hidden;
+            min-height: 0;
         }
-        
-        canvas {
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            max-width: 100%;
-            height: auto;
+
+        /* ── Left: visualization area ── */
+        .viz-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-width: 0;
         }
-        
-        .info-panel {
-            min-width: 300px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-        }
-        
-        .info-section {
-            margin-bottom: 20px;
-        }
-        
-        .info-section h3 {
-            margin-top: 0;
-            color: #495057;
-            border-bottom: 1px solid #dee2e6;
-            padding-bottom: 5px;
-        }
-        
-        .parameter-grid {
+
+        /* 2-column canvas grid */
+        .canvas-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .canvas-panel {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
             gap: 8px;
-            font-size: 14px;
         }
-        
-        .parameter-label {
-            font-weight: bold;
-            color: #6c757d;
+
+        .canvas-panel-title {
+            font-size: 11px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            color: var(--c-muted);
+            display: flex; align-items: center; justify-content: space-between;
         }
-        
-        .parameter-value {
-            color: #212529;
+
+        .canvas-wrapper {
+            width: 100%;
+            padding: 8px;
+            border-radius: 8px;
+            background: #1a1a2e;
         }
-        
-        .status {
-            padding: 10px;
+        .canvas-wrapper canvas {
+            display: block;
+            width: 100%;
+            aspect-ratio: 1 / 1;
             border-radius: 4px;
-            text-align: center;
-            font-weight: bold;
         }
-        
-        .status.loading {
-            background-color: #fff3cd;
-            color: #856404;
+
+        /* Horizontal colorbar */
+        .colorbar-row { display: flex; flex-direction: column; gap: 4px; }
+        .colorbar-strip { display: flex; align-items: center; gap: 8px; }
+        .colorbar-bar {
+            flex: 1; height: 13px;
+            border-radius: 3px;
+            border: 1px solid var(--c-border);
         }
-        
-        .status.success {
-            background-color: #d4edda;
-            color: #155724;
+        .cb-label {
+            font-size: 11px; font-family: monospace;
+            color: var(--c-muted); min-width: 62px;
         }
-        
-        .status.error {
-            background-color: #f8d7da;
-            color: #721c24;
+        .cb-label.right { text-align: right; }
+
+        /* ── Right: control panel ── */
+        .control-panel {
+            width: 280px;
+            flex-shrink: 0;
+            background: var(--c-surface);
+            border-left: 1px solid var(--c-border);
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
-        
-        .colorbar {
-            width: 20px;
-            height: 200px;
-            background: linear-gradient(to top, 
-                #000080 0%, 
-                #0000ff 20%, 
-                #00ffff 40%, 
-                #00ff00 60%, 
-                #ffff00 80%, 
-                #ff0000 100%);
-            border: 1px solid #ddd;
-            margin: 10px auto;
+
+        /* collapsible sections */
+        .cp-section {
+            border: 1px solid var(--c-border);
+            border-radius: 8px;
+            overflow: hidden;
         }
-        
-        .colorbar-label {
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
+        .cp-head {
+            padding: 8px 12px;
+            font-size: 11px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.07em;
+            color: var(--c-muted);
+            background: var(--c-surface2);
+            cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            user-select: none;
         }
-        
-        @media (max-width: 768px) {
-            .visualization-container {
-                flex-direction: column;
-            }
-            
-            .info-panel {
-                min-width: auto;
-            }
+        .cp-head:hover { color: var(--c-text); }
+        .cp-arrow { transition: transform 0.2s; }
+        .cp-section.collapsed .cp-arrow { transform: rotate(-90deg); }
+        .cp-body { padding: 10px 12px; }
+        .cp-section.collapsed .cp-body { display: none; }
+
+        .prow {
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 3px 0; font-size: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .prow:last-child { border-bottom: none; }
+        .pk { color: var(--c-muted); }
+        .pv { font-family: monospace; color: var(--c-text); text-align: right; }
+        .pv.hi   { color: #06b6d4; }
+        .pv.warn { color: var(--c-success); }
+
+        /* ── Status bar ── */
+        .statusbar {
+            background: var(--c-surface);
+            border-top: 1px solid var(--c-border);
+            padding: 5px 16px;
+            display: flex; align-items: center; gap: 24px;
+            flex-shrink: 0; flex-wrap: wrap;
+        }
+        .sitem {
+            display: flex; gap: 6px; align-items: center;
+            font-size: 11px; font-family: monospace;
+        }
+        .sk { color: var(--c-muted); text-transform: uppercase; }
+        .sv { color: var(--c-accent); font-weight: 600; }
+        .smsg { flex: 1; font-size: 11px; color: var(--c-muted); }
+        .smsg.ok      { color: var(--c-success); }
+        .smsg.err     { color: var(--c-danger); }
+        .smsg.loading { color: #f59e0b; }
+
+        /* scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--c-surface2); border-radius: 3px; }
+
+        @media (max-width: 900px) {
+            .canvas-grid { grid-template-columns: 1fr; }
+            .control-panel { width: 100%; border-left: none; border-top: 1px solid var(--c-border); }
+            .main { flex-direction: column; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>FlowLabLite – 2D Lid-Driven Cavity Flow</h1>
-        <p class="subtitle">MoonBit solver compiled to WebAssembly · open-source CFD demo</p>
-        <p style="text-align:center;font-size:12px;color:#888;margin-top:-18px;margin-bottom:10px;">
-            Build first: <code>moon build --target wasm-gc</code> &nbsp;|&nbsp; Then serve from project root with any HTTP server
-        </p>
-        
-        <div class="controls">
-            <button id="runSimulation" class="primary-btn" title="Shortcut: F">Run Full Simulation (500 steps)</button>
-            <button id="runSimpleTest" class="secondary-btn" title="Shortcut: Q">Quick Preview (50 steps)</button>
-            <button id="clearCanvas" class="secondary-btn" title="Shortcut: C">Clear</button>
-            <button id="downloadData" class="secondary-btn" title="Shortcut: D">Download CSV</button>
-            <button id="toggleStreamlines" class="secondary-btn" title="Shortcut: S">Streamlines</button>
-        </div>
-        
-        <div id="status" class="status loading">Ready to start simulation</div>
-        
-        <div class="visualization-container">
-            <div class="canvas-container">
-                <h3>Velocity Vector Field</h3>
-                <canvas id="velocityCanvas" width="500" height="500"></canvas>
-                <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
-                    <span id="velMin" style="font-size:11px;color:#555">0.0000</span>
-                    <div class="colorbar"></div>
-                    <span id="velMax" style="font-size:11px;color:#555">1.0000</span>
-                </div>
-                <div class="colorbar-label">Velocity Magnitude (m/s)</div>
-            </div>
 
-            <div class="canvas-container">
-                <h3>Pressure Field</h3>
-                <canvas id="pressureCanvas" width="500" height="500"></canvas>
-                <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;">
-                    <span id="presMin" style="font-size:11px;color:#555">–</span>
-                    <div class="colorbar" style="background:linear-gradient(to top,#0000ff 0%,#00ffff 50%,#ff8000 75%,#ff0000 100%)"></div>
-                    <span id="presMax" style="font-size:11px;color:#555">–</span>
-                </div>
-                <div class="colorbar-label">Pressure (Pa)</div>
-            </div>
-            
-            <div class="info-panel">
-                <div class="info-section">
-                    <h3>📊 Simulation Parameters</h3>
-                    <div class="parameter-grid">
-                        <span class="parameter-label">Grid Size:</span>
-                        <span class="parameter-value" id="gridSize">-</span>
-                        <span class="parameter-label">Time Steps:</span>
-                        <span class="parameter-value" id="timeSteps">-</span>
-                        <span class="parameter-label">Reynolds Number:</span>
-                        <span class="parameter-value" id="reynolds">-</span>
-                        <span class="parameter-label">Density (ρ):</span>
-                        <span class="parameter-value" id="density">-</span>
-                        <span class="parameter-label">Viscosity (ν):</span>
-                        <span class="parameter-value" id="viscosity">-</span>
-                        <span class="parameter-label">Time Step (dt):</span>
-                        <span class="parameter-value" id="timeStep">-</span>
-                        <span class="parameter-label">Poisson iters:</span>
-                        <span class="parameter-value" id="nit">-</span>
-                        <span class="parameter-label">Steps done:</span>
-                        <span class="parameter-value" id="stepsDone">-</span>
-                        <span class="parameter-label">|div(u)| avg:</span>
-                        <span class="parameter-value" id="divNorm">-</span>
-                    </div>
-                </div>
-                
-                <div class="info-section">
-                    <h3>📈 Field Statistics</h3>
-                    <div class="parameter-grid">
-                        <span class="parameter-label">Max |u|:</span>
-                        <span class="parameter-value" id="maxU">-</span>
-                        <span class="parameter-label">Max |v|:</span>
-                        <span class="parameter-value" id="maxV">-</span>
-                        <span class="parameter-label">Max Pressure:</span>
-                        <span class="parameter-value" id="maxP">-</span>
-                        <span class="parameter-label">Min Pressure:</span>
-                        <span class="parameter-value" id="minP">-</span>
-                    </div>
-                </div>
-                
-                <div class="info-section">
-                    <h3>🎯 Center Point Data</h3>
-                    <div class="parameter-grid">
-                        <span class="parameter-label">u velocity:</span>
-                        <span class="parameter-value" id="centerU">-</span>
-                        <span class="parameter-label">v velocity:</span>
-                        <span class="parameter-value" id="centerV">-</span>
-                        <span class="parameter-label">Pressure:</span>
-                        <span class="parameter-value" id="centerP">-</span>
-                        <span class="parameter-label">|V| magnitude:</span>
-                        <span class="parameter-value" id="centerMag">-</span>
-                    </div>
-                </div>
-                
-                <div class="info-section">
-                    <h3>About</h3>
-                    <p style="font-size: 12px; color: #6c757d; line-height: 1.4;">
-                        Solves 2D incompressible Navier-Stokes in a square cavity.
-                        Top boundary moves at u=1; other walls are no-slip.
-                        Pressure is found via a Poisson solve (nit iterations/step).
-                    </p>
-                    <p style="font-size: 11px; color: #999; line-height: 1.4; margin-top: 8px;">
-                        Solver: MoonBit → WebAssembly<br>
-                        Author: Fenfen Yu (余芬芬)<br>
-                        License: Apache-2.0<br>
-                        Keyboard: F=full, Q=quick, C=clear, D=download, S=streamlines
-                    </p>
-                </div>
-            </div>
+<!-- ═══ HEADER ═══════════════════════════════════════════════════════════════ -->
+<header>
+    <div class="header-brand">
+        <div class="brand-icon">🌊</div>
+        <div>
+            <div class="header-title">FlowLabLite — Live Solver</div>
+            <div class="header-sub">2D Lid-Driven Cavity Flow · MoonBit / WebAssembly</div>
         </div>
-        <p style="text-align:center;font-size:11px;color:#aaa;margin-top:12px;">
-            FlowLabLite &copy; 2026 Ezhou Hi-Modeling Technology Co., Ltd. &nbsp;|&nbsp; Apache-2.0
-        </p>
     </div>
-    <!-- WebAssembly loading and MoonBit integration -->
-    <script>
-        class FluidSimulationVisualizer {
-            constructor() {
-                this.wasmModule = null;
-                this.simulationData = null;
-                this.config = null;
-                this.showStreamlines = false;
-                this.velocityCanvas = document.getElementById('velocityCanvas');
-                this.pressureCanvas = document.getElementById('pressureCanvas');
-                this.velocityCtx = this.velocityCanvas.getContext('2d');
-                this.pressureCtx = this.pressureCanvas.getContext('2d');
-                
-                this.initializeEventListeners();
-                this.updateStatus('Ready to load WebAssembly module', 'loading');
-            }
+    <div style="display:flex;gap:8px;align-items:center;">
+        <div class="status-pill" id="headerPill">
+            <div class="dot idle" id="headerDot"></div>
+            <span id="headerMsg">Loading WASM…</span>
+        </div>
+    </div>
+</header>
 
-            initializeEventListeners() {
-                document.getElementById('runSimulation').addEventListener('click', () => this.runFullSimulation());
-                document.getElementById('runSimpleTest').addEventListener('click', () => this.runSimpleTest());
-                document.getElementById('clearCanvas').addEventListener('click', () => this.clearCanvases());
-                document.getElementById('downloadData').addEventListener('click', () => this.downloadData());
-                document.getElementById('toggleStreamlines').addEventListener('click', () => {
-                    this.showStreamlines = !this.showStreamlines;
-                    const btn = document.getElementById('toggleStreamlines');
-                    btn.classList.toggle('active', this.showStreamlines);
-                    if (this.simulationData) this.visualizeResults();
-                });
-                // Keyboard shortcuts
-                document.addEventListener('keydown', (e) => {
-                    if (e.target.tagName === 'INPUT') return;
-                    switch (e.key.toUpperCase()) {
-                        case 'F': this.runFullSimulation(); break;
-                        case 'Q': this.runSimpleTest();    break;
-                        case 'C': this.clearCanvases();    break;
-                        case 'D': this.downloadData();     break;
-                        case 'S': document.getElementById('toggleStreamlines').click(); break;
-                    }
-                });
-            }
+<!-- ═══ TOOLBAR ══════════════════════════════════════════════════════════════ -->
+<div class="toolbar">
+    <button class="btn primary" id="runSimulation" title="Run all 500 time steps  [F]">▶ Run 500 Steps</button>
+    <button class="btn" id="runSimpleTest" title="Quick 50-step preview  [Q]">⚡ Quick (50)</button>
+    <button class="btn" id="clearCanvas" title="Clear canvases  [C]">✕ Clear</button>
 
-            updateStatus(message, type = 'loading') {
-                const statusElement = document.getElementById('status');
-                statusElement.textContent = message;
-                statusElement.className = `status ${type}`;
-            }
+    <div class="tsep"></div>
 
-            async loadWasmModule() {
-                try {
-                    this.updateStatus('Loading WebAssembly module...', 'loading');
-                    
-                    // Try release build first, then fall back to debug build.
-                    // Run: moon build --target wasm-gc  (or --release for release)
-                    const wasmPaths = [
-                        '../../_build/wasm-gc/release/build/cmd/main/main.wasm',
-                        '../../_build/wasm-gc/debug/build/cmd/main/main.wasm'
-                    ];
-                    let response = null;
-                    for (const p of wasmPaths) {
-                        const r = await fetch(p);
-                        if (r.ok) { response = r; break; }
-                    }
-                    if (!response) throw new Error('WASM file not found – run: moon build --target wasm-gc');
-                    const wasmBytes = await response.arrayBuffer();
+    <button class="btn" id="toggleStreamlines" title="Toggle streamline overlay  [S]">〜 Streamlines</button>
 
-                    // MoonBit wasm-gc needs spectest/env/moonbit:ffi imports.
-                    // Use a Proxy so any unknown import returns a no-op instead of throwing.
-                    const noopFn = () => {};
-                    const makeNoopModule = () => new Proxy({}, { get: () => noopFn });
-                    const importObject = new Proxy({
-                        spectest: { print_char: noopFn, print_i32: noopFn, print_f64: noopFn },
-                        env: { println: (s) => console.log('[mbt]', s) },
-                        'moonbit:ffi': { println: (s) => console.log('[mbt]', s) },
-                    }, { get: (t, k) => k in t ? t[k] : makeNoopModule() });
+    <div class="tsep"></div>
 
-                    const wasmModule = await WebAssembly.instantiate(wasmBytes, importObject);
+    <button class="btn" id="downloadData" title="Export simulation data as CSV  [D]">⬇ CSV</button>
+</div>
 
-                    this.wasmModule = wasmModule.instance.exports;
-                    this.updateStatus('WebAssembly module loaded successfully', 'success');
-                    
-                    return true;
-                } catch (error) {
-                    console.error('Failed to load WASM module:', error);
-                    this.updateStatus('Failed to load WebAssembly module. Using mock data.', 'error');
-                    return false;
-                }
-            }
+<!-- ═══ MAIN ══════════════════════════════════════════════════════════════════ -->
+<div class="main">
 
-            async runFullSimulation() {
-                this.updateStatus('Running full cavity flow simulation…', 'loading');
+    <!-- ── Visualization area ── -->
+    <div class="viz-area">
+        <div class="canvas-grid">
 
-                try {
-                    if (this.wasmModule && this.wasmModule.init_simulation) {
-                        // Chunked WASM path: run 50 steps at a time, redraw after each chunk
-                        const totalSteps = this.wasmModule.get_nt ? this.wasmModule.get_nt() : 500;
-                        const chunkSize = 50;
-                        this.wasmModule.init_simulation();
-                        this.config = this._readConfigFromWasm();
+            <!-- Velocity canvas panel -->
+            <div class="canvas-panel">
+                <div class="canvas-panel-title">Velocity Magnitude &amp; Vectors</div>
+                <div class="canvas-wrapper">
+                    <canvas id="velocityCanvas" width="500" height="500"></canvas>
+                </div>
+                <div class="colorbar-row">
+                    <div class="colorbar-strip">
+                        <span class="cb-label" id="velMin">0.0000</span>
+                        <div class="colorbar-bar"
+                             style="background:linear-gradient(to right,#000080,#0000ff,#00ffff,#00ff00,#ffff00,#ff0000)"></div>
+                        <span class="cb-label right" id="velMax">—</span>
+                    </div>
+                    <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
+                        Velocity Magnitude (m/s) &nbsp;|&nbsp; Arrows: velocity vectors
+                    </div>
+                </div>
+            </div>
 
-                        for (let done = 0; done < totalSteps; done += chunkSize) {
-                            const n = Math.min(chunkSize, totalSteps - done);
-                            if (this.wasmModule.run_n_steps) {
-                                this.wasmModule.run_n_steps(n);
-                            } else {
-                                this.wasmModule.run_all_steps();
-                                done = totalSteps; // fallback: run all at once
-                            }
-                            this.simulationData = this._readGridFromWasm();
-                            this.updateParameterDisplay();
-                            this.visualizeResults();
-                            this.updateStatus(
-                                `Running… ${Math.min(done + chunkSize, totalSteps)}/${totalSteps} steps`, 'loading');
-                            // Yield to browser so the canvas actually repaints
-                            await new Promise(r => setTimeout(r, 0));
-                        }
-                    } else {
-                        // Mock fallback when WASM is unavailable
-                        const result = JSON.parse(this.generateMockFullSimulationData());
-                        this.simulationData = result.data;
-                        this.config = result.config;
-                        this.updateParameterDisplay();
-                        this.visualizeResults();
-                    }
+            <!-- Pressure canvas panel -->
+            <div class="canvas-panel">
+                <div class="canvas-panel-title">Pressure Field</div>
+                <div class="canvas-wrapper">
+                    <canvas id="pressureCanvas" width="500" height="500"></canvas>
+                </div>
+                <div class="colorbar-row">
+                    <div class="colorbar-strip">
+                        <span class="cb-label" id="presMin">—</span>
+                        <div class="colorbar-bar"
+                             style="background:linear-gradient(to right,#0000ff,#00ffff,#ff8000,#ff0000)"></div>
+                        <span class="cb-label right" id="presMax">—</span>
+                    </div>
+                    <div style="font-size:10px;color:var(--c-muted);margin-top:2px">
+                        Pressure (Pa) &nbsp;|&nbsp; Blue = low · Red = high
+                    </div>
+                </div>
+            </div>
 
-                    this.updateStatus('Full simulation completed successfully', 'success');
-                } catch (error) {
-                    console.error('Simulation failed:', error);
-                    this.updateStatus('Simulation failed: ' + error.message, 'error');
-                }
-            }
+        </div><!-- /canvas-grid -->
+    </div><!-- /viz-area -->
 
-            /** Read all grid data from the WASM globals into a JS array. */
-            _readGridFromWasm() {
-                const wasm = this.wasmModule;
-                const nx = wasm.get_nx(), ny = wasm.get_ny();
-                const data = [];
-                for (let i = 0; i < ny; i++) {
-                    for (let j = 0; j < nx; j++) {
-                        const u = wasm.get_u_at(i, j);
-                        const v = wasm.get_v_at(i, j);
-                        const p = wasm.get_p_at(i, j);
-                        const magnitude = wasm.get_velocity_magnitude_at
-                            ? wasm.get_velocity_magnitude_at(i, j)
-                            : Math.sqrt(u * u + v * v);
-                        data.push({
-                            x: j / (nx - 1) * 2.0,
-                            y: i / (ny - 1) * 2.0,
-                            u, v, p, magnitude, i, j
-                        });
-                    }
-                }
-                return data;
-            }
+    <!-- ── Right: control panel ── -->
+    <div class="control-panel">
 
-            /** Build config object from all WASM constant exports. */
-            _readConfigFromWasm() {
-                const w = this.wasmModule;
-                const nx = w.get_nx(), ny = w.get_ny(), nt = w.get_nt();
-                return {
-                    nx, ny, nt,
-                    dx: w.get_dx ? w.get_dx() : 2.0 / (nx - 1),
-                    dy: w.get_dy ? w.get_dy() : 2.0 / (ny - 1),
-                    dt:  w.get_dt  ? w.get_dt()  : 0.001,
-                    rho: w.get_rho ? w.get_rho() : 1.0,
-                    nu:  w.get_nu  ? w.get_nu()  : 0.1,
-                    re:  w.get_re  ? w.get_re()  : 20.0,
-                };
-            }
+        <!-- Simulation Parameters -->
+        <div class="cp-section" id="secParams">
+            <div class="cp-head" onclick="toggleSec('secParams')">
+                Simulation Parameters <span class="cp-arrow">▾</span>
+            </div>
+            <div class="cp-body">
+                <div class="prow"><span class="pk">Grid size</span>      <span class="pv hi"  id="gridSize">—</span></div>
+                <div class="prow"><span class="pk">Total steps</span>    <span class="pv"     id="timeSteps">—</span></div>
+                <div class="prow"><span class="pk">Steps done</span>     <span class="pv hi"  id="stepsDone">—</span></div>
+                <div class="prow"><span class="pk">Reynolds Re</span>    <span class="pv hi"  id="reynolds">—</span></div>
+                <div class="prow"><span class="pk">Density ρ</span>      <span class="pv"     id="density">—</span></div>
+                <div class="prow"><span class="pk">Viscosity ν</span>    <span class="pv"     id="viscosity">—</span></div>
+                <div class="prow"><span class="pk">Time step dt</span>   <span class="pv"     id="timeStep">—</span></div>
+                <div class="prow"><span class="pk">Poisson iters</span>  <span class="pv"     id="nit">—</span></div>
+                <div class="prow"><span class="pk">|div u| avg</span>    <span class="pv warn" id="divNorm">—</span></div>
+            </div>
+        </div>
 
-            async runSimpleTest() {
-                // Quick test: run only 50 steps for a fast preview
-                const quickSteps = 50;
-                this.updateStatus(`Running quick preview (${quickSteps} steps)…`, 'loading');
+        <!-- Field Statistics -->
+        <div class="cp-section" id="secStats">
+            <div class="cp-head" onclick="toggleSec('secStats')">
+                Field Statistics <span class="cp-arrow">▾</span>
+            </div>
+            <div class="cp-body">
+                <div class="prow"><span class="pk">Max |u|</span>       <span class="pv warn" id="maxU">—</span></div>
+                <div class="prow"><span class="pk">Max |v|</span>       <span class="pv warn" id="maxV">—</span></div>
+                <div class="prow"><span class="pk">Max pressure</span>  <span class="pv"      id="maxP">—</span></div>
+                <div class="prow"><span class="pk">Min pressure</span>  <span class="pv"      id="minP">—</span></div>
+            </div>
+        </div>
 
-                try {
-                    if (this.wasmModule && this.wasmModule.init_simulation) {
-                        this.wasmModule.init_simulation();
-                        this.config = this._readConfigFromWasm();
-                        await new Promise(r => setTimeout(r, 0));
-                        if (this.wasmModule.run_n_steps) {
-                            this.wasmModule.run_n_steps(quickSteps);
-                        } else {
-                            this.wasmModule.run_all_steps();
-                        }
-                        this.simulationData = this._readGridFromWasm();
-                    } else {
-                        this.simulationData = JSON.parse(this.generateMockSimpleData());
-                        this.config = { nx: 21, ny: 21, nt: 50,
-                            dx: 0.1, dy: 0.1, dt: 0.001, rho: 1.0, nu: 0.1, re: 20 };
-                    }
+        <!-- Centre-point data -->
+        <div class="cp-section" id="secCenter">
+            <div class="cp-head" onclick="toggleSec('secCenter')">
+                Centre Point (nx/2, ny/2) <span class="cp-arrow">▾</span>
+            </div>
+            <div class="cp-body">
+                <div class="prow"><span class="pk">u velocity</span>    <span class="pv" id="centerU">—</span></div>
+                <div class="prow"><span class="pk">v velocity</span>    <span class="pv" id="centerV">—</span></div>
+                <div class="prow"><span class="pk">Pressure p</span>    <span class="pv" id="centerP">—</span></div>
+                <div class="prow"><span class="pk">|V| magnitude</span> <span class="pv" id="centerMag">—</span></div>
+            </div>
+        </div>
 
-                    this.updateParameterDisplay();
-                    this.visualizeResults();
-                    this.updateStatus(`Quick preview done (${quickSteps} steps)`, 'success');
-                } catch (error) {
-                    console.error('Simple test failed:', error);
-                    this.updateStatus('Simple test failed: ' + error.message, 'error');
-                }
-            }
-            generateMockFullSimulationData() {
-                // 生成模拟的完整仿真数据
-                const nx = 41, ny = 41;
-                const data = [];
-                
-                for (let i = 0; i < ny; i++) {
-                    for (let j = 0; j < nx; j++) {
-                        const x = j / (nx - 1) * 2.0;
-                        const y = i / (ny - 1) * 2.0;
-                        
-                        // 模拟腔体流动的典型模式
-                        const centerX = 1.0, centerY = 1.0;
-                        const dx = x - centerX;
-                        const dy = y - centerY;
-                        const r = Math.sqrt(dx * dx + dy * dy);
-                        
-                        let u, v;
-                        if (i === ny - 1) {
-                            // 顶部边界：单位速度
-                            u = 1.0;
-                            v = 0.0;
-                        } else if (i === 0 || j === 0 || j === nx - 1) {
-                            // 其他边界：无滑移
-                            u = 0.0;
-                            v = 0.0;
-                        } else {
-                            // 内部：模拟涡流
-                            const angle = Math.atan2(dy, dx);
-                            const strength = Math.exp(-r) * 0.5;
-                            u = -strength * Math.sin(angle) * (y / 2.0);
-                            v = strength * Math.cos(angle) * (1.0 - x / 2.0);
-                        }
-                        
-                        const magnitude = Math.sqrt(u * u + v * v);
-                        // Mock pressure: sinusoidal pattern for demonstration
-                        const p = Math.sin(Math.PI * x / 2) * Math.cos(Math.PI * y / 2) * 0.1;
-                        data.push({ x, y, u, v, p, magnitude, i, j });
-                    }
-                }
-                
-                const config = {
-                    nx: 41, ny: 41, nt: 500,
-                    dx: 2.0 / 40, dy: 2.0 / 40, dt: 0.001,
-                    rho: 1.0, nu: 0.1
-                };
-                
-                return JSON.stringify({ config, data });
-            }
+        <!-- About -->
+        <div class="cp-section collapsed" id="secAbout">
+            <div class="cp-head" onclick="toggleSec('secAbout')">
+                About <span class="cp-arrow">▾</span>
+            </div>
+            <div class="cp-body" style="font-size:12px;color:var(--c-muted);line-height:1.6">
+                <p>Solves 2D incompressible Navier-Stokes in a square cavity.
+                Top boundary moves at u = 1; other walls are no-slip.
+                Pressure is solved via a Poisson equation each time step.</p>
+                <p style="margin-top:8px;font-size:11px;color:#475569">
+                    Solver: MoonBit → WebAssembly<br>
+                    Author: Fenfen Yu (余芬芬)<br>
+                    Affiliation: Beihang University<br>
+                    License: Apache-2.0
+                </p>
+                <p style="margin-top:8px;font-size:11px;color:#475569">
+                    Shortcuts: F=Run · Q=Quick · C=Clear · S=Streamlines · D=CSV
+                </p>
+                <p style="margin-top:8px;font-size:11px;color:#475569">
+                    Build: <code style="background:var(--c-surface2);padding:1px 4px;border-radius:3px">bash build_wasm.sh release</code><br>
+                    Serve: <code style="background:var(--c-surface2);padding:1px 4px;border-radius:3px">python -m http.server 8080</code>
+                </p>
+            </div>
+        </div>
 
-            generateMockSimpleData() {
-                // 生成简单的测试数据
-                const data = [];
-                const size = 21;
-                
-                for (let i = 0; i < size; i++) {
-                    for (let j = 0; j < size; j++) {
-                        const x = j / 10.0;
-                        const y = i / 10.0;
-                        const u = (i - 10.0) / 10.0;
-                        const v = (j - 10.0) / 10.0;
-                        const magnitude = Math.sqrt(u * u + v * v);
-                        
-                        const p = (i - 10) * 0.005;
-                        data.push({ x, y, u, v, p, magnitude, i, j });
-                    }
-                }
-                return JSON.stringify(data);
-            }
+    </div><!-- /control-panel -->
 
-            updateParameterDisplay() {
-                if (this.config) {
-                    document.getElementById('gridSize').textContent = `${this.config.nx} × ${this.config.ny}`;
-                    document.getElementById('timeSteps').textContent = this.config.nt || 'N/A';
-                    document.getElementById('density').textContent = this.config.rho.toFixed(2);
-                    document.getElementById('viscosity').textContent = this.config.nu.toFixed(3);
-                    document.getElementById('timeStep').textContent = this.config.dt.toFixed(6);
-                    const nit = this.wasmModule && this.wasmModule.get_nit ? this.wasmModule.get_nit() : '-';
-                    document.getElementById('nit').textContent = nit;
-                    const steps = this.wasmModule && this.wasmModule.get_step_count
-                        ? this.wasmModule.get_step_count() : '-';
-                    document.getElementById('stepsDone').textContent = steps;
-                    const divN = this.wasmModule && this.wasmModule.get_divergence_norm
-                        ? this.wasmModule.get_divergence_norm().toExponential(3) : '-';
-                    document.getElementById('divNorm').textContent = divN;
+</div><!-- /main -->
 
-                    const Re = this.config.re !== undefined
-                        ? this.config.re
-                        : (this.config.rho * 1.0 * 2.0) / this.config.nu;
-                    document.getElementById('reynolds').textContent = Re.toFixed(1);
-                }
-                
-                if (this.simulationData) {
-                    this.updateFieldStatistics();
-                }
-            }
+<!-- ═══ STATUS BAR ════════════════════════════════════════════════════════════ -->
+<div class="statusbar">
+    <div class="sitem"><span class="sk">Max |u|</span> <span class="sv" id="stU">—</span></div>
+    <div class="sitem"><span class="sk">Max |v|</span> <span class="sv" id="stV">—</span></div>
+    <div class="sitem"><span class="sk">Div norm</span><span class="sv" id="stDiv">—</span></div>
+    <div class="sitem"><span class="sk">Grid</span>    <span class="sv" id="stGrid">—</span></div>
+    <div class="sitem"><span class="sk">Steps</span>   <span class="sv" id="stSteps">—</span></div>
+    <span class="smsg loading" id="stMsg">Loading WebAssembly module…</span>
+</div>
 
-            updateFieldStatistics() {
-                let maxU = 0, maxV = 0;
-                let maxP = -Infinity, minP = Infinity;
-                let centerU = 0, centerV = 0, centerP = 0, centerMag = 0;
-                const nx = this.config ? this.config.nx : 21;
-                const ny = this.config ? this.config.ny : 21;
-                const ci = Math.floor(ny / 2), cj = Math.floor(nx / 2);
+<!-- ═══ SCRIPT ════════════════════════════════════════════════════════════════ -->
+<script>
+    /* ── Collapsible sections ── */
+    function toggleSec(id) {
+        document.getElementById(id).classList.toggle('collapsed');
+    }
 
-                this.simulationData.forEach(point => {
-                    maxU = Math.max(maxU, Math.abs(point.u));
-                    maxV = Math.max(maxV, Math.abs(point.v));
-                    if (point.p !== undefined) {
-                        if (point.p > maxP) maxP = point.p;
-                        if (point.p < minP) minP = point.p;
-                    }
-                    if (point.i === ci && point.j === cj) {
-                        centerU   = point.u;
-                        centerV   = point.v;
-                        centerP   = point.p !== undefined ? point.p : 0;
-                        centerMag = point.magnitude;
-                    }
-                });
+    /* ── Main visualizer class ── */
+    class FluidSimulationVisualizer {
+        constructor() {
+            this.wasmModule = null;
+            this.simulationData = null;
+            this.config = null;
+            this.showStreamlines = false;
+            this.velocityCanvas  = document.getElementById('velocityCanvas');
+            this.pressureCanvas  = document.getElementById('pressureCanvas');
+            this.velocityCtx     = this.velocityCanvas.getContext('2d');
+            this.pressureCtx     = this.pressureCanvas.getContext('2d');
 
-                document.getElementById('maxU').textContent = maxU.toFixed(4);
-                document.getElementById('maxV').textContent = maxV.toFixed(4);
-                document.getElementById('maxP').textContent = isFinite(maxP) ? maxP.toFixed(4) : 'N/A';
-                document.getElementById('minP').textContent = isFinite(minP) ? minP.toFixed(4) : 'N/A';
-                // Prefer O(1) WASM center getters when available
-                const cu = (this.wasmModule && this.wasmModule.get_u_center)
-                    ? this.wasmModule.get_u_center() : centerU;
-                const cv = (this.wasmModule && this.wasmModule.get_v_center)
-                    ? this.wasmModule.get_v_center() : centerV;
-                const cp = (this.wasmModule && this.wasmModule.get_p_center)
-                    ? this.wasmModule.get_p_center() : centerP;
-                const cm = Math.sqrt(cu * cu + cv * cv);
-                document.getElementById('centerU').textContent = cu.toFixed(4);
-                document.getElementById('centerV').textContent = cv.toFixed(4);
-                document.getElementById('centerP').textContent = cp.toFixed(4);
-                document.getElementById('centerMag').textContent = cm.toFixed(4);
-                // Update colorbar tick labels (use WASM max magnitude if available)
-                const velMax = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
-                    ? this.wasmModule.get_max_velocity_magnitude() : maxU;
-                document.getElementById('velMin').textContent = '0.0000';
-                document.getElementById('velMax').textContent = velMax.toFixed(4);
-                if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
-                if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
-            }
-            visualizeResults() {
-                this.clearCanvases();
-                this.drawVelocityField();
-                this.drawPressureField();
-                if (this.showStreamlines) {
-                    const nx = this.config ? this.config.nx : 41;
-                    const ny = this.config ? this.config.ny : 41;
-                    const grid = Array.from({ length: ny }, () => new Array(nx));
-                    this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
-                    this.drawStreamlines(grid, nx, ny);
-                }
-            }
-
-            clearCanvases() {
-                this.velocityCtx.clearRect(0, 0, this.velocityCanvas.width, this.velocityCanvas.height);
-                this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
-                // Reset info panel to initial state
-                ['maxU','maxV','maxP','minP','centerU','centerV','centerP','centerMag',
-                 'gridSize','timeSteps','density','viscosity','timeStep','reynolds','nit','stepsDone','divNorm']
-                    .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '-'; });
-                document.getElementById('velMin').textContent = '0.0000';
-                document.getElementById('velMax').textContent = '–';
-                document.getElementById('presMin').textContent = '–';
-                document.getElementById('presMax').textContent = '–';
-                this.simulationData = null;
-                this.config = null;
-                this.updateStatus('Canvases cleared – press Run to start', 'loading');
-            }
-
-            drawVelocityField() {
-                const canvas = this.velocityCanvas;
-                const ctx = this.velocityCtx;
-                const width = canvas.width;
-                const height = canvas.height;
-                
-                if (!this.simulationData) return;
-                
-                // Compute max magnitude for colour normalisation (use WASM if available)
-                const maxMagnitude = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
-                    ? (this.wasmModule.get_max_velocity_magnitude() || 1)
-                    : (Math.max(...this.simulationData.map(p => p.magnitude)) || 1);
-
-                // Build a 2-D lookup: grid[i][j] = point
-                const nx = this.config ? this.config.nx : 41;
-                const ny = this.config ? this.config.ny : 41;
-                const grid = Array.from({ length: ny }, () => new Array(nx));
-                this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
-
-                // Fill every canvas pixel by bilinear lookup into the grid
-                const imageData = ctx.createImageData(width, height);
-                for (let py = 0; py < height; py++) {
-                    for (let px = 0; px < width; px++) {
-                        // Grid coordinates (fractional)
-                        const gx = px / (width  - 1) * (nx - 1);
-                        const gy = (1 - py / (height - 1)) * (ny - 1); // Y flipped
-                        const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
-                        const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
-                        const tx = gx - j0, ty = gy - i0;
-                        const p00 = grid[i0][j0], p10 = grid[i1][j0];
-                        const p01 = grid[i0][j1], p11 = grid[i1][j1];
-                        if (!p00 || !p10 || !p01 || !p11) continue;
-                        const mag = p00.magnitude * (1-tx)*(1-ty) + p01.magnitude * tx*(1-ty) +
-                                    p10.magnitude * (1-tx)*ty     + p11.magnitude * tx*ty;
-                        const color = this.velocityMagnitudeToColor(mag / maxMagnitude);
-                        const idx = (py * width + px) * 4;
-                        imageData.data[idx]     = color.r;
-                        imageData.data[idx + 1] = color.g;
-                        imageData.data[idx + 2] = color.b;
-                        imageData.data[idx + 3] = 255;
-                    }
-                }
-                ctx.putImageData(imageData, 0, 0);
-                
-                // Draw velocity vectors – scale so the longest arrow spans ~one cell width
-                const nx = this.config ? this.config.nx : Math.sqrt(this.simulationData.length);
-                const step = Math.max(1, Math.floor(nx / 20));
-                const cellPx = width / nx;
-                const maxMag2 = maxMagnitude || 1;
-                const arrowScale = (cellPx * step * 0.8) / maxMag2;
-
-                ctx.strokeStyle = 'rgba(40,40,40,0.75)';
-                ctx.lineWidth = 1;
-
-                this.simulationData.forEach(point => {
-                    if (point.i !== undefined && point.j !== undefined &&
-                        point.i % step === 0 && point.j % step === 0) {
-                        const px = (point.x / 2.0) * width;
-                        const py = (1.0 - point.y / 2.0) * height;
-                        const dx = point.u * arrowScale;
-                        const dy = -point.v * arrowScale;
-                        this.drawArrow(ctx, px, py, px + dx, py + dy);
-                    }
-                });
-                
-                // 绘制边界
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(0, 0, width, height);
-                
-                // 标记顶部移动边界
-                ctx.fillStyle = 'red';
-                ctx.font = '12px Arial';
-                ctx.fillText('Moving Lid (u = 1)', 10, 20);
-            }
-
-            drawPressureField() {
-                const ctx = this.pressureCtx;
-                const width = this.pressureCanvas.width;
-                const height = this.pressureCanvas.height;
-
-                if (!this.simulationData) return;
-
-                // Find pressure range for normalisation
-                let minP = Infinity, maxP = -Infinity;
-                this.simulationData.forEach(pt => {
-                    if (pt.p !== undefined) {
-                        if (pt.p < minP) minP = pt.p;
-                        if (pt.p > maxP) maxP = pt.p;
-                    }
-                });
-                const rangeP = maxP - minP || 1;
-
-                // Build grid lookup and bilinear-fill every canvas pixel
-                const nx = this.config ? this.config.nx : 41;
-                const ny = this.config ? this.config.ny : 41;
-                const grid = Array.from({ length: ny }, () => new Array(nx));
-                this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
-
-                const imageData = ctx.createImageData(width, height);
-                for (let py = 0; py < height; py++) {
-                    for (let px = 0; px < width; px++) {
-                        const gx = px / (width  - 1) * (nx - 1);
-                        const gy = (1 - py / (height - 1)) * (ny - 1);
-                        const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
-                        const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
-                        const tx = gx - j0, ty = gy - i0;
-                        const p00 = grid[i0][j0], p10 = grid[i1][j0];
-                        const p01 = grid[i0][j1], p11 = grid[i1][j1];
-                        if (!p00 || !p10 || !p01 || !p11) continue;
-                        const pval = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
-                                     (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
-                        const t = (pval - minP) / rangeP;
-                        const color = this.pressureToColor(t);
-                        const idx = (py * width + px) * 4;
-                        imageData.data[idx]     = color.r;
-                        imageData.data[idx + 1] = color.g;
-                        imageData.data[idx + 2] = color.b;
-                        imageData.data[idx + 3] = 255;
-                    }
-                }
-                ctx.putImageData(imageData, 0, 0);
-
-                // Border + labels
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(0, 0, width, height);
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                ctx.font = '11px Arial';
-                ctx.textAlign = 'left';
-                ctx.fillText(`max: ${maxP.toFixed(4)}`, 4, 14);
-                ctx.textAlign = 'left';
-                ctx.fillText(`min: ${minP.toFixed(4)}`, 4, height - 4);
-            }
-
-            /** 4-stop diverging colourmap: blue → cyan → orange → red */
-            pressureToColor(t) {
-                t = Math.max(0, Math.min(1, t));
-                const stops = [
-                    [0,   0, 255],   // blue  (min pressure)
-                    [0, 255, 255],   // cyan
-                    [255,128,  0],   // orange
-                    [255,  0,  0],   // red   (max pressure)
-                ];
-                const seg = t * (stops.length - 1);
-                const lo = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
-                const s = seg - lo;
-                return {
-                    r: Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * s),
-                    g: Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * s),
-                    b: Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * s),
-                };
-            }
-
-            /** 5-stop jet colourmap: dark-blue → blue → cyan → green → yellow → red */
-            velocityMagnitudeToColor(intensity) {
-                intensity = Math.max(0, Math.min(1, intensity));
-                // Stops at 0, 0.2, 0.4, 0.6, 0.8, 1.0
-                const stops = [
-                    [0,   0, 128],   // dark blue
-                    [0,   0, 255],   // blue
-                    [0, 255, 255],   // cyan
-                    [0, 255,   0],   // green
-                    [255,255,  0],   // yellow
-                    [255,  0,  0],   // red
-                ];
-                const seg = intensity * (stops.length - 1);
-                const lo = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
-                const t = seg - lo;
-                const lerp = (a, b) => Math.round(a + (b - a) * t);
-                return {
-                    r: lerp(stops[lo][0], stops[hi][0]),
-                    g: lerp(stops[lo][1], stops[hi][1]),
-                    b: lerp(stops[lo][2], stops[hi][2])
-                };
-            }
-
-            drawArrow(ctx, x1, y1, x2, y2) {
-                const dx = x2 - x1;
-                const dy = y2 - y1;
-                const length = Math.sqrt(dx * dx + dy * dy);
-                
-                if (length < 2) return; // 跳过太短的矢量
-                
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
-                ctx.stroke();
-                
-                // 绘制箭头头部
-                const arrowLength = Math.min(8, length * 0.3);
-                const arrowAngle = Math.PI / 6;
-                const angle = Math.atan2(dy, dx);
-                
-                const x3 = x2 - arrowLength * Math.cos(angle - arrowAngle);
-                const y3 = y2 - arrowLength * Math.sin(angle - arrowAngle);
-                const x4 = x2 - arrowLength * Math.cos(angle + arrowAngle);
-                const y4 = y2 - arrowLength * Math.sin(angle + arrowAngle);
-                
-                ctx.beginPath();
-                ctx.moveTo(x2, y2);
-                ctx.lineTo(x3, y3);
-                ctx.moveTo(x2, y2);
-                ctx.lineTo(x4, y4);
-                ctx.stroke();
-            }
-
-            /**
-             * Bilinear-interpolate (u, v) at physical position (x, y) ∈ [0,2]×[0,2].
-             * Returns {u, v} or null if out of domain.
-             */
-            _interpVelocity(grid, nx, ny, x, y) {
-                const dx = 2.0 / (nx - 1);
-                const dy = 2.0 / (ny - 1);
-                const gj = x / dx;
-                const gi = y / dy;
-                if (gj < 0 || gj >= nx - 1 || gi < 0 || gi >= ny - 1) return null;
-                const j0 = Math.floor(gj), j1 = j0 + 1;
-                const i0 = Math.floor(gi), i1 = i0 + 1;
-                const tx = gj - j0, ty = gi - i0;
-                const p00 = grid[i0][j0], p10 = grid[i1][j0];
-                const p01 = grid[i0][j1], p11 = grid[i1][j1];
-                if (!p00 || !p10 || !p01 || !p11) return null;
-                const u = p00.u*(1-tx)*(1-ty) + p01.u*tx*(1-ty) +
-                          p10.u*(1-tx)*ty     + p11.u*tx*ty;
-                const v = p00.v*(1-tx)*(1-ty) + p01.v*tx*(1-ty) +
-                          p10.v*(1-tx)*ty     + p11.v*tx*ty;
-                return { u, v };
-            }
-
-            /**
-             * Draw streamlines on the velocity canvas using RK4 integration.
-             * Seeds: 8×8 interior grid. Each streamline: up to 300 RK4 steps.
-             */
-            drawStreamlines(grid, nx, ny) {
-                const ctx = this.velocityCtx;
-                const cw = this.velocityCanvas.width;
-                const ch = this.velocityCanvas.height;
-
-                // Normalise velocity so step length is grid-cell-independent
-                let maxMag = 0;
-                this.simulationData.forEach(pt => { if (pt.magnitude > maxMag) maxMag = pt.magnitude; });
-                if (maxMag < 1e-12) return;
-
-                const ds = 0.04;          // arc-length step in physical units
-                const maxSteps = 300;     // steps per streamline
-                const nSeeds = 8;         // seeds per side → 64 total
-
-                ctx.save();
-                ctx.lineWidth = 1.2;
-                ctx.globalAlpha = 0.75;
-
-                for (let si = 0; si < nSeeds; si++) {
-                    for (let sj = 0; sj < nSeeds; sj++) {
-                        // Seed positions: uniformly spaced in [0.15, 1.85]×[0.15, 1.85]
-                        let x = 0.15 + (1.70 / (nSeeds - 1)) * sj;
-                        let y = 0.15 + (1.70 / (nSeeds - 1)) * si;
-
-                        // Colour seed by initial velocity magnitude for visual contrast
-                        const v0 = this._interpVelocity(grid, nx, ny, x, y);
-                        if (!v0) continue;
-                        const m0 = Math.sqrt(v0.u * v0.u + v0.v * v0.v) / maxMag;
-                        const g = Math.round(180 + m0 * 75);
-                        ctx.strokeStyle = `rgb(${Math.round(200 - m0*100)},${g},255)`;
-
-                        ctx.beginPath();
-                        // Canvas pixel from physical coords: px = x/2*cw, py = (1-y/2)*ch
-                        ctx.moveTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
-
-                        let drawing = false;
-                        for (let step = 0; step < maxSteps; step++) {
-                            // RK4 with normalised velocity field (unit speed)
-                            const uv1 = this._interpVelocity(grid, nx, ny, x, y);
-                            if (!uv1) break;
-                            const m1 = Math.sqrt(uv1.u*uv1.u + uv1.v*uv1.v) || 1e-12;
-                            const k1x = uv1.u / m1, k1y = uv1.v / m1;
-
-                            const uv2 = this._interpVelocity(grid, nx, ny, x + 0.5*ds*k1x, y + 0.5*ds*k1y);
-                            if (!uv2) break;
-                            const m2 = Math.sqrt(uv2.u*uv2.u + uv2.v*uv2.v) || 1e-12;
-                            const k2x = uv2.u / m2, k2y = uv2.v / m2;
-
-                            const uv3 = this._interpVelocity(grid, nx, ny, x + 0.5*ds*k2x, y + 0.5*ds*k2y);
-                            if (!uv3) break;
-                            const m3 = Math.sqrt(uv3.u*uv3.u + uv3.v*uv3.v) || 1e-12;
-                            const k3x = uv3.u / m3, k3y = uv3.v / m3;
-
-                            const uv4 = this._interpVelocity(grid, nx, ny, x + ds*k3x, y + ds*k3y);
-                            if (!uv4) break;
-                            const m4 = Math.sqrt(uv4.u*uv4.u + uv4.v*uv4.v) || 1e-12;
-                            const k4x = uv4.u / m4, k4y = uv4.v / m4;
-
-                            x += ds * (k1x + 2*k2x + 2*k3x + k4x) / 6;
-                            y += ds * (k1y + 2*k2y + 2*k3y + k4y) / 6;
-
-                            if (x < 0 || x > 2 || y < 0 || y > 2) break;
-                            ctx.lineTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
-                            drawing = true;
-                        }
-                        if (drawing) ctx.stroke();
-                    }
-                }
-                ctx.restore();
-            }
-
-            downloadData() {
-                if (!this.simulationData) {
-                    alert('No simulation data available to download');
-                    return;
-                }
-                
-                let csvContent = 'i,j,x,y,u,v,magnitude,pressure\n';
-                this.simulationData.forEach(point => {
-                    const i = point.i !== undefined ? point.i : '';
-                    const j = point.j !== undefined ? point.j : '';
-                    const p = point.p !== undefined ? point.p : '';
-                    csvContent += `${i},${j},${point.x},${point.y},${point.u},${point.v},${point.magnitude},${p}\n`;
-                });
-                
-                const blob = new Blob([csvContent], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'cavity_flow_data.csv';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-            }
-
+            this.initializeEventListeners();
+            this.updateStatus('Ready to load WebAssembly module', 'idle');
         }
 
-        // 初始化应用
-        document.addEventListener('DOMContentLoaded', async () => {
-            const app = new FluidSimulationVisualizer();
-            
-            // 尝试加载 WASM 模块
-            const wasmLoaded = await app.loadWasmModule();
-            
-            if (!wasmLoaded) {
-                console.log('Using mock data for demonstration');
+        initializeEventListeners() {
+            document.getElementById('runSimulation').addEventListener('click',  () => this.runFullSimulation());
+            document.getElementById('runSimpleTest').addEventListener('click',  () => this.runSimpleTest());
+            document.getElementById('clearCanvas').addEventListener('click',    () => this.clearCanvases());
+            document.getElementById('downloadData').addEventListener('click',   () => this.downloadData());
+            document.getElementById('toggleStreamlines').addEventListener('click', () => {
+                this.showStreamlines = !this.showStreamlines;
+                document.getElementById('toggleStreamlines').classList.toggle('active', this.showStreamlines);
+                if (this.simulationData) this.visualizeResults();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT') return;
+                switch (e.key.toUpperCase()) {
+                    case 'F': this.runFullSimulation(); break;
+                    case 'Q': this.runSimpleTest();     break;
+                    case 'C': this.clearCanvases();     break;
+                    case 'D': this.downloadData();      break;
+                    case 'S': document.getElementById('toggleStreamlines').click(); break;
+                }
+            });
+        }
+
+        /* ── Status helpers ── */
+        updateStatus(message, type = 'loading') {
+            // type: 'loading' | 'ok' | 'err' | 'idle'
+            const dot = document.getElementById('headerDot');
+            const msg = document.getElementById('headerMsg');
+            const bar = document.getElementById('stMsg');
+            msg.textContent = message;
+
+            dot.className = 'dot';
+            if (type === 'ok')      { dot.classList.add('');       }
+            else if (type === 'loading') { dot.classList.add('loading'); }
+            else if (type === 'err')     { dot.classList.add('error');   }
+            else                         { dot.classList.add('idle');    }
+
+            bar.textContent  = message;
+            bar.className    = 'smsg';
+            if (type === 'ok')      bar.classList.add('ok');
+            else if (type === 'err') bar.classList.add('err');
+            else if (type === 'loading') bar.classList.add('loading');
+        }
+
+        /* ── WASM loading ── */
+        async loadWasmModule() {
+            try {
+                this.updateStatus('Loading WebAssembly module…', 'loading');
+                const wasmPaths = [
+                    '../../_build/wasm-gc/release/build/cmd/main/main.wasm',
+                    '../../_build/wasm-gc/debug/build/cmd/main/main.wasm'
+                ];
+                let response = null;
+                for (const p of wasmPaths) {
+                    const r = await fetch(p);
+                    if (r.ok) { response = r; break; }
+                }
+                if (!response) throw new Error('WASM not found — run: bash build_wasm.sh release');
+                const wasmBytes = await response.arrayBuffer();
+
+                const noopFn = () => {};
+                const makeNoopModule = () => new Proxy({}, { get: () => noopFn });
+                const importObject = new Proxy({
+                    spectest: { print_char: noopFn, print_i32: noopFn, print_f64: noopFn },
+                    env: { println: (s) => console.log('[mbt]', s) },
+                    'moonbit:ffi': { println: (s) => console.log('[mbt]', s) },
+                }, { get: (t, k) => k in t ? t[k] : makeNoopModule() });
+
+                const wasmModule = await WebAssembly.instantiate(wasmBytes, importObject);
+                this.wasmModule = wasmModule.instance.exports;
+                this.updateStatus('WASM loaded — press Run to simulate', 'ok');
+                return true;
+            } catch (error) {
+                console.error('WASM load failed:', error);
+                this.updateStatus('WASM not found — using mock data', 'err');
+                return false;
             }
-        });
-    </script>
+        }
+
+        /* ── Simulation runners ── */
+        async runFullSimulation() {
+            this.updateStatus('Running simulation…', 'loading');
+            try {
+                if (this.wasmModule && this.wasmModule.init_simulation) {
+                    const totalSteps = this.wasmModule.get_nt ? this.wasmModule.get_nt() : 500;
+                    const chunkSize  = 50;
+                    this.wasmModule.init_simulation();
+                    this.config = this._readConfigFromWasm();
+
+                    for (let done = 0; done < totalSteps; done += chunkSize) {
+                        const n = Math.min(chunkSize, totalSteps - done);
+                        if (this.wasmModule.run_n_steps) {
+                            this.wasmModule.run_n_steps(n);
+                        } else {
+                            this.wasmModule.run_all_steps();
+                            done = totalSteps;
+                        }
+                        this.simulationData = this._readGridFromWasm();
+                        this.updateParameterDisplay();
+                        this.visualizeResults();
+                        this.updateStatus(
+                            `Running… ${Math.min(done + chunkSize, totalSteps)}/${totalSteps} steps`,
+                            'loading');
+                        await new Promise(r => setTimeout(r, 0));
+                    }
+                } else {
+                    const result = JSON.parse(this.generateMockFullSimulationData());
+                    this.simulationData = result.data;
+                    this.config = result.config;
+                    this.updateParameterDisplay();
+                    this.visualizeResults();
+                }
+                this.updateStatus('Simulation complete', 'ok');
+            } catch (error) {
+                console.error('Simulation failed:', error);
+                this.updateStatus('Error: ' + error.message, 'err');
+            }
+        }
+
+        async runSimpleTest() {
+            const quickSteps = 50;
+            this.updateStatus(`Quick preview (${quickSteps} steps)…`, 'loading');
+            try {
+                if (this.wasmModule && this.wasmModule.init_simulation) {
+                    this.wasmModule.init_simulation();
+                    this.config = this._readConfigFromWasm();
+                    await new Promise(r => setTimeout(r, 0));
+                    if (this.wasmModule.run_n_steps) {
+                        this.wasmModule.run_n_steps(quickSteps);
+                    } else {
+                        this.wasmModule.run_all_steps();
+                    }
+                    this.simulationData = this._readGridFromWasm();
+                } else {
+                    this.simulationData = JSON.parse(this.generateMockSimpleData());
+                    this.config = { nx: 21, ny: 21, nt: 50,
+                        dx: 0.1, dy: 0.1, dt: 0.001, rho: 1.0, nu: 0.1, re: 20 };
+                }
+                this.updateParameterDisplay();
+                this.visualizeResults();
+                this.updateStatus(`Quick preview done (${quickSteps} steps)`, 'ok');
+            } catch (error) {
+                console.error('Quick preview failed:', error);
+                this.updateStatus('Error: ' + error.message, 'err');
+            }
+        }
+
+        /* ── WASM data readers ── */
+        _readGridFromWasm() {
+            const wasm = this.wasmModule;
+            const nx = wasm.get_nx(), ny = wasm.get_ny();
+            const data = [];
+            for (let i = 0; i < ny; i++) {
+                for (let j = 0; j < nx; j++) {
+                    const u = wasm.get_u_at(i, j);
+                    const v = wasm.get_v_at(i, j);
+                    const p = wasm.get_p_at(i, j);
+                    const magnitude = wasm.get_velocity_magnitude_at
+                        ? wasm.get_velocity_magnitude_at(i, j)
+                        : Math.sqrt(u * u + v * v);
+                    data.push({ x: j / (nx - 1) * 2.0, y: i / (ny - 1) * 2.0,
+                                u, v, p, magnitude, i, j });
+                }
+            }
+            return data;
+        }
+
+        _readConfigFromWasm() {
+            const w = this.wasmModule;
+            const nx = w.get_nx(), ny = w.get_ny(), nt = w.get_nt();
+            return {
+                nx, ny, nt,
+                dx:  w.get_dx  ? w.get_dx()  : 2.0 / (nx - 1),
+                dy:  w.get_dy  ? w.get_dy()  : 2.0 / (ny - 1),
+                dt:  w.get_dt  ? w.get_dt()  : 0.001,
+                rho: w.get_rho ? w.get_rho() : 1.0,
+                nu:  w.get_nu  ? w.get_nu()  : 0.1,
+                re:  w.get_re  ? w.get_re()  : 20.0,
+            };
+        }
+
+        /* ── Display update ── */
+        updateParameterDisplay() {
+            if (this.config) {
+                const c = this.config;
+                document.getElementById('gridSize').textContent  = `${c.nx} × ${c.ny}`;
+                document.getElementById('timeSteps').textContent = c.nt || '—';
+                document.getElementById('density').textContent   = c.rho.toFixed(2);
+                document.getElementById('viscosity').textContent = c.nu.toFixed(3);
+                document.getElementById('timeStep').textContent  = c.dt.toFixed(6);
+                const nit = this.wasmModule && this.wasmModule.get_nit
+                    ? this.wasmModule.get_nit() : '—';
+                document.getElementById('nit').textContent = nit;
+                const steps = this.wasmModule && this.wasmModule.get_step_count
+                    ? this.wasmModule.get_step_count() : '—';
+                document.getElementById('stepsDone').textContent = steps;
+                const divN = this.wasmModule && this.wasmModule.get_divergence_norm
+                    ? this.wasmModule.get_divergence_norm().toExponential(3) : '—';
+                document.getElementById('divNorm').textContent = divN;
+                const Re = c.re !== undefined
+                    ? c.re : (c.rho * 1.0 * 2.0) / c.nu;
+                document.getElementById('reynolds').textContent = Re.toFixed(1);
+
+                // status bar
+                document.getElementById('stGrid').textContent  = `${c.nx}×${c.ny}`;
+                document.getElementById('stSteps').textContent = typeof steps === 'number' ? steps : '—';
+                if (typeof divN === 'string') document.getElementById('stDiv').textContent = divN;
+            }
+            if (this.simulationData) this.updateFieldStatistics();
+        }
+
+        updateFieldStatistics() {
+            let maxU = 0, maxV = 0;
+            let maxP = -Infinity, minP = Infinity;
+            let centerU = 0, centerV = 0, centerP = 0;
+            const nx = this.config ? this.config.nx : 21;
+            const ny = this.config ? this.config.ny : 21;
+            const ci = Math.floor(ny / 2), cj = Math.floor(nx / 2);
+
+            this.simulationData.forEach(pt => {
+                maxU = Math.max(maxU, Math.abs(pt.u));
+                maxV = Math.max(maxV, Math.abs(pt.v));
+                if (pt.p !== undefined) {
+                    if (pt.p > maxP) maxP = pt.p;
+                    if (pt.p < minP) minP = pt.p;
+                }
+                if (pt.i === ci && pt.j === cj) {
+                    centerU = pt.u; centerV = pt.v;
+                    centerP = pt.p !== undefined ? pt.p : 0;
+                }
+            });
+
+            document.getElementById('maxU').textContent = maxU.toFixed(4);
+            document.getElementById('maxV').textContent = maxV.toFixed(4);
+            document.getElementById('maxP').textContent = isFinite(maxP) ? maxP.toFixed(4) : '—';
+            document.getElementById('minP').textContent = isFinite(minP) ? minP.toFixed(4) : '—';
+
+            const cu = (this.wasmModule && this.wasmModule.get_u_center)
+                ? this.wasmModule.get_u_center() : centerU;
+            const cv = (this.wasmModule && this.wasmModule.get_v_center)
+                ? this.wasmModule.get_v_center() : centerV;
+            const cp = (this.wasmModule && this.wasmModule.get_p_center)
+                ? this.wasmModule.get_p_center() : centerP;
+            document.getElementById('centerU').textContent   = cu.toFixed(4);
+            document.getElementById('centerV').textContent   = cv.toFixed(4);
+            document.getElementById('centerP').textContent   = cp.toFixed(4);
+            document.getElementById('centerMag').textContent = Math.sqrt(cu*cu + cv*cv).toFixed(4);
+
+            const velMax = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
+                ? this.wasmModule.get_max_velocity_magnitude() : maxU;
+            document.getElementById('velMin').textContent  = '0.0000';
+            document.getElementById('velMax').textContent  = velMax.toFixed(4);
+            if (isFinite(minP)) document.getElementById('presMin').textContent = minP.toFixed(4);
+            if (isFinite(maxP)) document.getElementById('presMax').textContent = maxP.toFixed(4);
+
+            // status bar
+            document.getElementById('stU').textContent = maxU.toFixed(4);
+            document.getElementById('stV').textContent = maxV.toFixed(4);
+        }
+
+        /* ── Visualize ── */
+        visualizeResults() {
+            this.clearCanvasPixels();
+            this.drawVelocityField();
+            this.drawPressureField();
+            if (this.showStreamlines) {
+                const nx = this.config ? this.config.nx : 41;
+                const ny = this.config ? this.config.ny : 41;
+                const grid = Array.from({ length: ny }, () => new Array(nx));
+                this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+                this.drawStreamlines(grid, nx, ny);
+            }
+        }
+
+        /* Clear only pixel content, not info panel */
+        clearCanvasPixels() {
+            this.velocityCtx.clearRect(0, 0, this.velocityCanvas.width, this.velocityCanvas.height);
+            this.pressureCtx.clearRect(0, 0, this.pressureCanvas.width, this.pressureCanvas.height);
+        }
+
+        clearCanvases() {
+            this.clearCanvasPixels();
+            ['gridSize','timeSteps','density','viscosity','timeStep','reynolds',
+             'nit','stepsDone','divNorm','maxU','maxV','maxP','minP',
+             'centerU','centerV','centerP','centerMag']
+                .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+            document.getElementById('velMin').textContent  = '0.0000';
+            document.getElementById('velMax').textContent  = '—';
+            document.getElementById('presMin').textContent = '—';
+            document.getElementById('presMax').textContent = '—';
+            ['stU','stV','stDiv','stGrid','stSteps']
+                .forEach(id => { document.getElementById(id).textContent = '—'; });
+            this.simulationData = null;
+            this.config = null;
+            this.updateStatus('Cleared — press Run to start', 'idle');
+        }
+
+        /* ── Draw velocity field ── */
+        drawVelocityField() {
+            const canvas = this.velocityCanvas;
+            const ctx    = this.velocityCtx;
+            const width  = canvas.width;
+            const height = canvas.height;
+            if (!this.simulationData) return;
+
+            const maxMagnitude = (this.wasmModule && this.wasmModule.get_max_velocity_magnitude)
+                ? (this.wasmModule.get_max_velocity_magnitude() || 1)
+                : (Math.max(...this.simulationData.map(p => p.magnitude)) || 1);
+
+            const nx = this.config ? this.config.nx : 41;
+            const ny = this.config ? this.config.ny : 41;
+            const grid = Array.from({ length: ny }, () => new Array(nx));
+            this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
+            const imageData = ctx.createImageData(width, height);
+            for (let py = 0; py < height; py++) {
+                for (let px = 0; px < width; px++) {
+                    const gx = px / (width  - 1) * (nx - 1);
+                    const gy = (1 - py / (height - 1)) * (ny - 1);
+                    const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
+                    const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
+                    const tx = gx - j0, ty = gy - i0;
+                    const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                    const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                    if (!p00 || !p10 || !p01 || !p11) continue;
+                    const mag = p00.magnitude*(1-tx)*(1-ty) + p01.magnitude*tx*(1-ty) +
+                                p10.magnitude*(1-tx)*ty     + p11.magnitude*tx*ty;
+                    const color = this.velocityMagnitudeToColor(mag / maxMagnitude);
+                    const idx = (py * width + px) * 4;
+                    imageData.data[idx]     = color.r;
+                    imageData.data[idx + 1] = color.g;
+                    imageData.data[idx + 2] = color.b;
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            // Velocity arrows
+            const step = Math.max(1, Math.floor(nx / 20));
+            const cellPx = width / nx;
+            const arrowScale = (cellPx * step * 0.8) / (maxMagnitude || 1);
+
+            ctx.strokeStyle = 'rgba(220,220,220,0.7)';
+            ctx.lineWidth = 1;
+            this.simulationData.forEach(pt => {
+                if (pt.i !== undefined && pt.j !== undefined &&
+                    pt.i % step === 0 && pt.j % step === 0) {
+                    const px = (pt.x / 2.0) * width;
+                    const py = (1.0 - pt.y / 2.0) * height;
+                    this.drawArrow(ctx, px, py,
+                        px + pt.u * arrowScale, py - pt.v * arrowScale);
+                }
+            });
+
+            // Border + lid label
+            ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(0.75, 0.75, width - 1.5, height - 1.5);
+            ctx.fillStyle = 'rgba(251,191,36,0.9)';
+            ctx.font = 'bold 11px monospace';
+            ctx.fillText('→ Moving Lid  u = 1', 8, 16);
+        }
+
+        /* ── Draw pressure field ── */
+        drawPressureField() {
+            const ctx    = this.pressureCtx;
+            const width  = this.pressureCanvas.width;
+            const height = this.pressureCanvas.height;
+            if (!this.simulationData) return;
+
+            let minP = Infinity, maxP = -Infinity;
+            this.simulationData.forEach(pt => {
+                if (pt.p !== undefined) {
+                    if (pt.p < minP) minP = pt.p;
+                    if (pt.p > maxP) maxP = pt.p;
+                }
+            });
+            const rangeP = maxP - minP || 1;
+
+            const nx = this.config ? this.config.nx : 41;
+            const ny = this.config ? this.config.ny : 41;
+            const grid = Array.from({ length: ny }, () => new Array(nx));
+            this.simulationData.forEach(pt => { if (pt.i !== undefined) grid[pt.i][pt.j] = pt; });
+
+            const imageData = ctx.createImageData(width, height);
+            for (let py = 0; py < height; py++) {
+                for (let px = 0; px < width; px++) {
+                    const gx = px / (width  - 1) * (nx - 1);
+                    const gy = (1 - py / (height - 1)) * (ny - 1);
+                    const j0 = Math.floor(gx), j1 = Math.min(j0 + 1, nx - 1);
+                    const i0 = Math.floor(gy), i1 = Math.min(i0 + 1, ny - 1);
+                    const tx = gx - j0, ty = gy - i0;
+                    const p00 = grid[i0][j0], p10 = grid[i1][j0];
+                    const p01 = grid[i0][j1], p11 = grid[i1][j1];
+                    if (!p00 || !p10 || !p01 || !p11) continue;
+                    const pval = (p00.p||0)*(1-tx)*(1-ty) + (p01.p||0)*tx*(1-ty) +
+                                 (p10.p||0)*(1-tx)*ty     + (p11.p||0)*tx*ty;
+                    const t = (pval - minP) / rangeP;
+                    const color = this.pressureToColor(t);
+                    const idx = (py * width + px) * 4;
+                    imageData.data[idx]     = color.r;
+                    imageData.data[idx + 1] = color.g;
+                    imageData.data[idx + 2] = color.b;
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(0.75, 0.75, width - 1.5, height - 1.5);
+        }
+
+        /* ── Streamlines (RK4) ── */
+        _interpVelocity(grid, nx, ny, x, y) {
+            const dx = 2.0 / (nx - 1);
+            const dy = 2.0 / (ny - 1);
+            const gj = x / dx, gi = y / dy;
+            if (gj < 0 || gj >= nx - 1 || gi < 0 || gi >= ny - 1) return null;
+            const j0 = Math.floor(gj), j1 = j0 + 1;
+            const i0 = Math.floor(gi), i1 = i0 + 1;
+            const tx = gj - j0, ty = gi - i0;
+            const p00 = grid[i0][j0], p10 = grid[i1][j0];
+            const p01 = grid[i0][j1], p11 = grid[i1][j1];
+            if (!p00 || !p10 || !p01 || !p11) return null;
+            return {
+                u: p00.u*(1-tx)*(1-ty) + p01.u*tx*(1-ty) + p10.u*(1-tx)*ty + p11.u*tx*ty,
+                v: p00.v*(1-tx)*(1-ty) + p01.v*tx*(1-ty) + p10.v*(1-tx)*ty + p11.v*tx*ty,
+            };
+        }
+
+        drawStreamlines(grid, nx, ny) {
+            const ctx = this.velocityCtx;
+            const cw = this.velocityCanvas.width;
+            const ch = this.velocityCanvas.height;
+
+            let maxMag = 0;
+            this.simulationData.forEach(pt => { if (pt.magnitude > maxMag) maxMag = pt.magnitude; });
+            if (maxMag < 1e-12) return;
+
+            const ds = 0.04, maxSteps = 300, nSeeds = 8;
+
+            ctx.save();
+            ctx.lineWidth  = 1.2;
+            ctx.globalAlpha = 0.75;
+
+            for (let si = 0; si < nSeeds; si++) {
+                for (let sj = 0; sj < nSeeds; sj++) {
+                    let x = 0.15 + (1.70 / (nSeeds - 1)) * sj;
+                    let y = 0.15 + (1.70 / (nSeeds - 1)) * si;
+
+                    const v0 = this._interpVelocity(grid, nx, ny, x, y);
+                    if (!v0) continue;
+                    const m0 = Math.sqrt(v0.u * v0.u + v0.v * v0.v) / maxMag;
+                    const g  = Math.round(180 + m0 * 75);
+                    ctx.strokeStyle = `rgb(${Math.round(200 - m0*100)},${g},255)`;
+
+                    ctx.beginPath();
+                    ctx.moveTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
+
+                    let drawing = false;
+                    for (let step = 0; step < maxSteps; step++) {
+                        const uv1 = this._interpVelocity(grid, nx, ny, x, y);
+                        if (!uv1) break;
+                        const m1 = Math.sqrt(uv1.u*uv1.u + uv1.v*uv1.v) || 1e-12;
+                        const k1x = uv1.u/m1, k1y = uv1.v/m1;
+
+                        const uv2 = this._interpVelocity(grid, nx, ny, x+0.5*ds*k1x, y+0.5*ds*k1y);
+                        if (!uv2) break;
+                        const m2 = Math.sqrt(uv2.u*uv2.u + uv2.v*uv2.v) || 1e-12;
+                        const k2x = uv2.u/m2, k2y = uv2.v/m2;
+
+                        const uv3 = this._interpVelocity(grid, nx, ny, x+0.5*ds*k2x, y+0.5*ds*k2y);
+                        if (!uv3) break;
+                        const m3 = Math.sqrt(uv3.u*uv3.u + uv3.v*uv3.v) || 1e-12;
+                        const k3x = uv3.u/m3, k3y = uv3.v/m3;
+
+                        const uv4 = this._interpVelocity(grid, nx, ny, x+ds*k3x, y+ds*k3y);
+                        if (!uv4) break;
+                        const m4 = Math.sqrt(uv4.u*uv4.u + uv4.v*uv4.v) || 1e-12;
+                        const k4x = uv4.u/m4, k4y = uv4.v/m4;
+
+                        x += ds * (k1x + 2*k2x + 2*k3x + k4x) / 6;
+                        y += ds * (k1y + 2*k2y + 2*k3y + k4y) / 6;
+
+                        if (x < 0 || x > 2 || y < 0 || y > 2) break;
+                        ctx.lineTo(x / 2.0 * cw, (1.0 - y / 2.0) * ch);
+                        drawing = true;
+                    }
+                    if (drawing) ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        /* ── Colourmaps ── */
+        velocityMagnitudeToColor(intensity) {
+            intensity = Math.max(0, Math.min(1, intensity));
+            const stops = [
+                [0,   0, 128], [0,   0, 255], [0, 255, 255],
+                [0, 255,   0], [255,255,  0], [255,  0,  0],
+            ];
+            const seg = intensity * (stops.length - 1);
+            const lo  = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
+            const t   = seg - lo;
+            return {
+                r: Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * t),
+                g: Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * t),
+                b: Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * t),
+            };
+        }
+
+        pressureToColor(t) {
+            t = Math.max(0, Math.min(1, t));
+            const stops = [[0,0,255],[0,255,255],[255,128,0],[255,0,0]];
+            const seg = t * (stops.length - 1);
+            const lo  = Math.floor(seg), hi = Math.min(lo + 1, stops.length - 1);
+            const s   = seg - lo;
+            return {
+                r: Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * s),
+                g: Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * s),
+                b: Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * s),
+            };
+        }
+
+        drawArrow(ctx, x1, y1, x2, y2) {
+            const dx = x2 - x1, dy = y2 - y1;
+            const length = Math.sqrt(dx*dx + dy*dy);
+            if (length < 2) return;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            const al = Math.min(7, length * 0.3);
+            const aa = Math.PI / 6;
+            const angle = Math.atan2(dy, dx);
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - al*Math.cos(angle-aa), y2 - al*Math.sin(angle-aa));
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - al*Math.cos(angle+aa), y2 - al*Math.sin(angle+aa));
+            ctx.stroke();
+        }
+
+        /* ── CSV download ── */
+        downloadData() {
+            if (!this.simulationData) { alert('No simulation data to download.'); return; }
+            let csv = 'i,j,x,y,u,v,magnitude,pressure\n';
+            this.simulationData.forEach(pt => {
+                csv += `${pt.i??''},${pt.j??''},${pt.x},${pt.y},${pt.u},${pt.v},${pt.magnitude},${pt.p??''}\n`;
+            });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+            a.download = 'cavity_flow_data.csv';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        }
+
+        /* ── Mock data (WASM unavailable) ── */
+        generateMockFullSimulationData() {
+            const nx = 41, ny = 41;
+            const data = [];
+            for (let i = 0; i < ny; i++) {
+                for (let j = 0; j < nx; j++) {
+                    const x = j / (nx-1) * 2, y = i / (ny-1) * 2;
+                    const cx = x - 1, cy = y - 1;
+                    const r = Math.sqrt(cx*cx + cy*cy);
+                    let u = 0, v = 0;
+                    if (i === ny-1) { u = 1; }
+                    else if (i > 0 && j > 0 && j < nx-1) {
+                        const str = Math.exp(-r) * 0.5;
+                        u = -str * Math.sin(Math.atan2(cy, cx)) * (y/2);
+                        v =  str * Math.cos(Math.atan2(cy, cx)) * (1 - x/2);
+                    }
+                    data.push({ x, y, u, v, p: Math.sin(Math.PI*x/2)*Math.cos(Math.PI*y/2)*0.1,
+                                magnitude: Math.sqrt(u*u+v*v), i, j });
+                }
+            }
+            return JSON.stringify({ config: { nx, ny, nt: 500, dx: 0.05, dy: 0.05,
+                dt: 0.001, rho: 1.0, nu: 0.1, re: 20 }, data });
+        }
+
+        generateMockSimpleData() {
+            const data = [], size = 21;
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const u = (i-10)/10, v = (j-10)/10;
+                    data.push({ x: j/10, y: i/10, u, v, p: (i-10)*0.005,
+                                magnitude: Math.sqrt(u*u+v*v), i, j });
+                }
+            }
+            return JSON.stringify(data);
+        }
+    }
+
+    /* ── Boot ── */
+    document.addEventListener('DOMContentLoaded', async () => {
+        const app = new FluidSimulationVisualizer();
+        const ok  = await app.loadWasmModule();
+        if (!ok) console.log('Using mock data for demonstration');
+    });
+</script>
 </body>
 </html>
