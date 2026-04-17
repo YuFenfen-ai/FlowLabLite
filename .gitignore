@@ -5,3 +5,5 @@ _build/
 results*.json
 _build_results*.json
 CLAUDE.md
+bugs.md
+decides.md
