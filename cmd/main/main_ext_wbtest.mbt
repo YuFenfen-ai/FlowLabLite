@@ -830,6 +830,25 @@ test "tecplot_solution_time" {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ══════════════════════════════════════════════════════════════════════════════
+// L. Unit Tests — Runtime Re + Steps Override  (T96)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T96 [Unit / EP / OBT]
+// parse_pos_int("100", 0) must return 100, and nu=2.0/100 must equal 0.02.
+// Also verifies that g_nu_runtime is mutable (single-element Array[Double]).
+test "runtime_re_100_gives_nu_0_02" {
+  let re = parse_pos_int("100", 0)
+  assert_eq(re, 100)
+  let nu_100 = 2.0 / re.to_double()
+  assert_true(approx_eq(nu_100, 0.02, 1.0e-10))
+  // Verify g_nu_runtime is settable and readable
+  let prev = g_nu_runtime[0]
+  g_nu_runtime[0] = nu_100
+  assert_true(approx_eq(g_nu_runtime[0], 0.02, 1.0e-10))
+  g_nu_runtime[0] = prev   // restore compile-time default (nu=0.1)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // K. Unit Tests — Centerline CSV + Monitor CSV  (T94–T95)
 // ══════════════════════════════════════════════════════════════════════════════
 

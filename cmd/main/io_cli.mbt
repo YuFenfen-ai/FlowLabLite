@@ -17,6 +17,23 @@
 // Argument helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Parse a decimal integer string (positive only, no sign).
+/// Returns `def` when the string is empty, non-numeric, or overflows.
+/// Used for --re and --steps CLI argument parsing.
+fn parse_pos_int(s : String, def : Int) -> Int {
+  if s.length() == 0 { return def }
+  let n   : Array[Int]  = [0]
+  let ok  : Array[Bool] = [true]
+  s.iter().each(fn(c : Char) {
+    if c >= '0' && c <= '9' {
+      n[0] = n[0] * 10 + (c.to_int() - 48)   // '0' = ASCII 48
+    } else {
+      ok[0] = false
+    }
+  })
+  if ok[0] && s.length() > 0 { n[0] } else { def }
+}
+
 /// Return true if any format-related flag is present in argv.
 /// Scans from index 1 (skipping argv[0] = program name).
 fn cli_wants_format(args : Array[String]) -> Bool {
@@ -95,7 +112,7 @@ fn collect_mac_export() -> SolverExport {
     h:     dx,
     x0:    dx / 2.0,
     y0:    dy / 2.0,
-    steps: local_mac_nt,
+    steps: get_mac_step_count(),        // actual steps completed (respects --steps override)
     u:     u_cc,
     v:     v_cc,
     p:     p_cc,
@@ -118,7 +135,7 @@ fn collect_solver_exports(solver_filter : String) -> Array[SolverExport] {
       h:     dx,
       x0:    0.0,
       y0:    0.0,
-      steps: local_nt,
+      steps: get_step_count(),          // actual steps completed (respects --steps override)
       u:     g_u,
       v:     g_v,
       p:     g_p,
@@ -132,7 +149,7 @@ fn collect_solver_exports(solver_filter : String) -> Array[SolverExport] {
       h:     dx,
       x0:    0.0,
       y0:    0.0,
-      steps: local_simple_n,
+      steps: get_simple_step_count(),   // actual iterations completed
       u:     g_u_s,
       v:     g_v_s,
       p:     g_p_s,
@@ -146,7 +163,7 @@ fn collect_solver_exports(solver_filter : String) -> Array[SolverExport] {
       h:     dx,
       x0:    0.0,
       y0:    0.0,
-      steps: local_pcg_nt,
+      steps: get_pcg_step_count(),      // actual steps completed
       u:     g_u_pcg,
       v:     g_v_pcg,
       p:     g_p_pcg,

@@ -270,7 +270,7 @@ pub fn get_max_velocity_magnitude() -> Double {
 /// init_simulation() must be called once before the first chunk.
 pub fn run_n_steps(n : Int) -> Unit {
   let (u_out, v_out, p_out) = cavity_flow_array(
-    n, g_u, g_v, dt, dx, dy, g_p, rho, nu,
+    n, g_u, g_v, dt, dx, dy, g_p, rho, g_nu_runtime[0],
   )
   for i = 0; i < ny; i = i + 1 {
     for j = 0; j < nx; j = j + 1 {
@@ -286,7 +286,7 @@ pub fn run_n_steps(n : Int) -> Unit {
 /// JS workflow:  init_simulation() → run_all_steps() → get_u_at/get_v_at/get_p_at
 pub fn run_all_steps() -> Unit {
   let (u_out, v_out, p_out) = cavity_flow_array(
-    nt, g_u, g_v, dt, dx, dy, g_p, rho, nu,
+    nt, g_u, g_v, dt, dx, dy, g_p, rho, g_nu_runtime[0],
   )
   for i = 0; i < ny; i = i + 1 {
     for j = 0; j < nx; j = j + 1 {
@@ -836,8 +836,8 @@ fn simple_one_iter(
       let conv_u_x = u[i][j] * dt / dx * (u[i][j] - u[i][j - 1])
       let conv_u_y = v[i][j] * dt / dy * (u[i][j] - u[i - 1][j])
       let pg_u     = dt / (2.0 * rho * dx) * (p[i][j + 1] - p[i][j - 1])
-      let visc_u_x = nu * dt / (dx * dx) * (u[i][j + 1] - 2.0 * u[i][j] + u[i][j - 1])
-      let visc_u_y = nu * dt / (dy * dy) * (u[i + 1][j] - 2.0 * u[i][j] + u[i - 1][j])
+      let visc_u_x = g_nu_runtime[0] * dt / (dx * dx) * (u[i][j + 1] - 2.0 * u[i][j] + u[i][j - 1])
+      let visc_u_y = g_nu_runtime[0] * dt / (dy * dy) * (u[i + 1][j] - 2.0 * u[i][j] + u[i - 1][j])
       let visc_u   = visc_u_x + visc_u_y
       let u_new    = u[i][j] - conv_u_x - conv_u_y - pg_u + visc_u
       u_star[i][j] = simple_alpha_u * u_new + (1.0 - simple_alpha_u) * u[i][j]
@@ -845,8 +845,8 @@ fn simple_one_iter(
       let conv_v_x = u[i][j] * dt / dx * (v[i][j] - v[i][j - 1])
       let conv_v_y = v[i][j] * dt / dy * (v[i][j] - v[i - 1][j])
       let pg_v     = dt / (2.0 * rho * dy) * (p[i + 1][j] - p[i - 1][j])
-      let visc_v_x = nu * dt / (dx * dx) * (v[i][j + 1] - 2.0 * v[i][j] + v[i][j - 1])
-      let visc_v_y = nu * dt / (dy * dy) * (v[i + 1][j] - 2.0 * v[i][j] + v[i - 1][j])
+      let visc_v_x = g_nu_runtime[0] * dt / (dx * dx) * (v[i][j + 1] - 2.0 * v[i][j] + v[i][j - 1])
+      let visc_v_y = g_nu_runtime[0] * dt / (dy * dy) * (v[i + 1][j] - 2.0 * v[i][j] + v[i - 1][j])
       let visc_v   = visc_v_x + visc_v_y
       let v_new    = v[i][j] - conv_v_x - conv_v_y - pg_v + visc_v
       v_star[i][j] = simple_alpha_u * v_new + (1.0 - simple_alpha_u) * v[i][j]
@@ -1817,7 +1817,7 @@ pub fn init_chorin_pcg() -> Unit {
 /// Run n Chorin-PCG time steps starting from the current state.
 pub fn run_chorin_pcg_n_steps(n : Int) -> Unit {
   let (u_out, v_out, p_out) = cavity_flow_pcg(
-    n, g_u_pcg, g_v_pcg, dt, dx, dy, g_p_pcg, rho, nu, g_pcg_last_iters,
+    n, g_u_pcg, g_v_pcg, dt, dx, dy, g_p_pcg, rho, g_nu_runtime[0], g_pcg_last_iters,
   )
   for i = 0; i < ny; i = i + 1 {
     for j = 0; j < nx; j = j + 1 {
@@ -2270,6 +2270,14 @@ let g_mac_last_iters : Array[Int] = [0]
 // Avoids polluting stdout when format output is redirected to a file.
 let g_quiet_mode : Array[Bool] = [false]
 
+// ── Runtime Re and steps override (CLI --re / --steps flags) ─────────────────
+// g_nu_runtime[0]: kinematic viscosity for CLI runs; defaults to compile-time nu.
+//   Browser WASM API: get_re() still returns 2.0/nu (compile-time, unchanged).
+//   CLI:  moon run cmd/main --target wasm -- --re 100 → sets g_nu_runtime[0]=0.02
+// g_steps_override[0]: time steps override for CLI runs; 0 = use local_nt default.
+let g_nu_runtime     : Array[Double] = [nu]   // default: Re=20 (nu=0.1)
+let g_steps_override : Array[Int]    = [0]    // 0 = use local_nt / local_pcg_nt etc.
+
 // ── WASM API – MAC solver ─────────────────────────────────────────────────────
 
 pub fn init_mac() -> Unit {
@@ -2288,7 +2296,7 @@ pub fn init_mac() -> Unit {
 
 pub fn run_mac_n_steps(n : Int) -> Unit {
   let (u_out, v_out, p_out) = cavity_flow_mac(
-    n, g_u_mac, g_v_mac, dt, dx, dy, g_p_mac, rho, nu, g_mac_last_iters,
+    n, g_u_mac, g_v_mac, dt, dx, dy, g_p_mac, rho, g_nu_runtime[0], g_mac_last_iters,
   )
   for i = 0; i < mac_nc; i = i + 1 {
     for j = 0; j < mac_nc + 1; j = j + 1 { g_u_mac[i][j] = u_out[i][j] }
@@ -2475,10 +2483,23 @@ fn main {
   let _cli_args = @env.args()
   if cli_wants_format(_cli_args) {
     g_quiet_mode[0] = true
-    if run_chorin { init_simulation();         run_n_steps(local_nt)             }
-    if run_simple { init_simple();             run_simple_n_iter(local_simple_n) }
-    if run_pcg    { init_chorin_pcg();         run_chorin_pcg_n_steps(local_pcg_nt) }
-    if run_mac    { init_mac();                run_mac_n_steps(local_mac_nt)     }
+    // Parse --re: override kinematic viscosity (nu = 2.0 / Re)
+    let re_str  = cli_get_string(_cli_args, "--re", "0")
+    let re_int  = parse_pos_int(re_str, 0)
+    if re_int > 0 { g_nu_runtime[0] = 2.0 / re_int.to_double() }
+    // Parse --steps: override time step count for all solvers
+    let steps_str = cli_get_string(_cli_args, "--steps", "0")
+    let steps_val = parse_pos_int(steps_str, 0)
+    if steps_val > 0 { g_steps_override[0] = steps_val }
+    // Effective step counts (override or compile-time default)
+    let eff_nt     = if g_steps_override[0] > 0 { g_steps_override[0] } else { local_nt }
+    let eff_simple = if g_steps_override[0] > 0 { g_steps_override[0] } else { local_simple_n }
+    let eff_pcg    = if g_steps_override[0] > 0 { g_steps_override[0] } else { local_pcg_nt }
+    let eff_mac    = if g_steps_override[0] > 0 { g_steps_override[0] } else { local_mac_nt }
+    if run_chorin { init_simulation();   run_n_steps(eff_nt)                   }
+    if run_simple { init_simple();       run_simple_n_iter(eff_simple)          }
+    if run_pcg    { init_chorin_pcg();   run_chorin_pcg_n_steps(eff_pcg)       }
+    if run_mac    { init_mac();          run_mac_n_steps(eff_mac)              }
     dispatch_format_cli(_cli_args)
     return
   }
