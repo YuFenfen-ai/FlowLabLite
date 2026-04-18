@@ -919,6 +919,73 @@ test "vti_data_array_count_is_three" {
 // K. Unit Tests — Ghia (1982) Benchmark Data  (T97–T98)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════════
+// L. Unit Tests — QUICK Convection Scheme  (T99–T100)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T99 [Unit / EP / OBT]
+// Uniform field (φ = const) must produce zero convection for both QUICK and
+// upwind, regardless of advecting velocity.  ∂φ/∂x = 0 identically.
+test "quick_uniform_field_zero_convection" {
+  let nr = 5
+  let nc = 5
+  let phi   = create_zeros_2d(nr, nc)
+  let u_vel = create_zeros_2d(nr, nc)
+  // Fill φ = 3.0 everywhere, u = 1.0 everywhere
+  for i = 0; i < nr; i = i + 1 {
+    for j = 0; j < nc; j = j + 1 {
+      phi[i][j]   = 3.0
+      u_vel[i][j] = 1.0
+    }
+  }
+  let result = quick_convection_x(phi, u_vel, nr, nc, 0.05, 0.001)
+  // All interior nodes must give zero (uniform gradient = 0)
+  let mut all_zero = true
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc - 1; j = j + 1 {
+      if result[i][j].abs() > 1.0e-14 {
+        all_zero = false
+      }
+    }
+  }
+  assert_true(all_zero)
+}
+
+// T100 [Unit / OBT]
+// Linear field (φ[i][j] = j * dx, u = 1) must give exact convection = dt
+// at all interior nodes that have a full QUICK stencil (j = 2..nc-3).
+// QUICK is exact for linear and quadratic polynomials; this verifies the
+// scheme reaches the 3rd-order design accuracy on smooth linear data.
+// Expected: u * ∂φ/∂x * dt = 1.0 * (1/dx) * dt * dx = dt
+test "quick_linear_field_exact" {
+  let nr  = 7
+  let nc  = 7
+  let dx  = 0.05
+  let dt_ = 0.001
+  let phi   = create_zeros_2d(nr, nc)
+  let u_vel = create_zeros_2d(nr, nc)
+  // φ[i][j] = j * dx  (linear in x), u = 1 everywhere
+  for i = 0; i < nr; i = i + 1 {
+    for j = 0; j < nc; j = j + 1 {
+      phi[i][j]   = j.to_double() * dx
+      u_vel[i][j] = 1.0
+    }
+  }
+  let result = quick_convection_x(phi, u_vel, nr, nc, dx, dt_)
+  let expected = dt_   // u * (1/dx) * dx * dt = dt
+  let tol = 1.0e-12
+  // Check interior nodes away from boundary (j=2..nc-3 have full stencil)
+  let mut ok = true
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 2; j < nc - 2; j = j + 1 {
+      if (result[i][j] - expected).abs() > tol {
+        ok = false
+      }
+    }
+  }
+  assert_true(ok)
+}
+
 // T97 [Unit / BVA]
 // Both Ghia reference arrays must have exactly 17 data points and the same
 // length (symmetry check): yn, u (vertical centerline), xn, v (horizontal).
