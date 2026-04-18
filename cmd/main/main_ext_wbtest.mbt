@@ -824,3 +824,38 @@ test "tecplot_solution_time" {
   let dat = format_tecplot([s])
   assert_true(dat.contains("SOLUTIONTIME=\{10.0 * dt}"))
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// J. Unit Tests — VTK XML ImageData (.vti) Format  (T92–T93)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T92 [Unit / EP]
+// format_vti must produce valid VTK XML: <?xml> declaration and
+// <VTKFile type="ImageData"> root element must be present.
+// Also verifies WholeExtent uses nc-1 (e.g., nc=4 → "0 3 0 3 0 0").
+test "vti_xml_header_present" {
+  let nc = 4
+  let s  = make_test_export("chorin", nc, 0.5, 0.3, 0.1)
+  let vti = format_vti(s)
+  assert_true(vti.contains("<?xml version=\"1.0\"?>"))
+  assert_true(vti.contains("<VTKFile type=\"ImageData\""))
+  assert_true(vti.contains("<ImageData"))
+  // nc=4 → extent upper bound = 3
+  assert_true(vti.contains("WholeExtent=\"0 3 0 3 0 0\""))
+}
+
+// T93 [Unit / OBT]
+// format_vti must contain exactly 3 <DataArray> opening tags:
+// pressure (scalar), velocity (3-component), vel_magnitude (scalar).
+test "vti_data_array_count_is_three" {
+  let s   = make_test_export("pcg", 3, 1.0, 0.0, 0.5)
+  let vti = format_vti(s)
+  // Count occurrences of "<DataArray" (opening tag, not closing)
+  let mut count = 0
+  vti.split("\n").each(fn(line) {
+    if line.contains("<DataArray") && not(line.contains("</DataArray")) {
+      count = count + 1
+    }
+  })
+  assert_eq(count, 3)
+}

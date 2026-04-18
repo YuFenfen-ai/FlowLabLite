@@ -3,6 +3,7 @@
 // Supported formats:
 //   CSV     – RFC 4180 Comma-Separated Values
 //   VTK     – VTK Legacy ASCII Format v2.0 (STRUCTURED_GRID)
+//   VTI     – VTK XML ImageData Format v0.1 (PointData, ascii)
 //   Tecplot – Tecplot ASCII Data Format (.dat, structured ZONE)
 //
 // All functions are pure: they take a SolverExport value and return a String.
@@ -175,6 +176,81 @@ fn format_tecplot(solvers : Array[SolverExport]) -> String {
       }
     }
   }
+
+  buf.to_string()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VTK XML ImageData (.vti)  (VTK XML Formats v0.1, ImageData)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Produce a VTK XML ImageData (.vti) file for one solver.
+///
+/// Format: VTK XML 4.2 ImageData, ascii encoding, PointData.
+/// Compatible with ParaView ≥ 3.0 (preferred format over VTK Legacy).
+///
+/// Grid mapping:
+///   nc=41 (node-centred) → WholeExtent="0 40 0 40 0 0", Origin=(x0, y0, 0)
+///   nc=40 (MAC cell-centred) → WholeExtent="0 39 0 39 0 0", Origin=(x0, y0, 0)
+///
+/// Three DataArrays (PointData):
+///   1. pressure       — Float64, 1 component
+///   2. velocity       — Float64, 3 components (u, v, 0)
+///   3. vel_magnitude  — Float64, 1 component
+///
+/// Data ordering: x (col) varies fastest, then y (row) — VTK standard.
+fn format_vti(s : SolverExport) -> String {
+  let re     = 2.0 / nu
+  let nc1    = s.nc - 1                 // extent upper bound per axis
+  let buf    = StringBuilder::new()
+
+  // ── XML header ────────────────────────────────────────────────────────────
+  buf.write_string("<?xml version=\"1.0\"?>\n")
+  buf.write_string("<VTKFile type=\"ImageData\" version=\"0.1\" byte_order=\"LittleEndian\">\n")
+  buf.write_string("  <!-- FlowLabLite \{s.label} Re=\{re} step=\{s.steps} -->\n")
+  buf.write_string("  <ImageData WholeExtent=\"0 \{nc1} 0 \{nc1} 0 0\"")
+  buf.write_string(" Origin=\"\{s.x0} \{s.y0} 0\"")
+  buf.write_string(" Spacing=\"\{s.h} \{s.h} 1\">\n")
+  buf.write_string("    <Piece Extent=\"0 \{nc1} 0 \{nc1} 0 0\">\n")
+  buf.write_string("      <PointData>\n")
+
+  // ── DataArray 1: pressure ─────────────────────────────────────────────────
+  buf.write_string("        <DataArray type=\"Float64\" Name=\"pressure\" format=\"ascii\">\n")
+  for row = 0; row < s.nc; row = row + 1 {
+    for col = 0; col < s.nc; col = col + 1 {
+      buf.write_string("          \{s.p[row][col]}\n")
+    }
+  }
+  buf.write_string("        </DataArray>\n")
+
+  // ── DataArray 2: velocity (3-component, w=0) ──────────────────────────────
+  buf.write_string("        <DataArray type=\"Float64\" Name=\"velocity\" NumberOfComponents=\"3\" format=\"ascii\">\n")
+  for row = 0; row < s.nc; row = row + 1 {
+    for col = 0; col < s.nc; col = col + 1 {
+      let u_ = s.u[row][col]
+      let v_ = s.v[row][col]
+      buf.write_string("          \{u_} \{v_} 0.0\n")
+    }
+  }
+  buf.write_string("        </DataArray>\n")
+
+  // ── DataArray 3: vel_magnitude ────────────────────────────────────────────
+  buf.write_string("        <DataArray type=\"Float64\" Name=\"vel_magnitude\" format=\"ascii\">\n")
+  for row = 0; row < s.nc; row = row + 1 {
+    for col = 0; col < s.nc; col = col + 1 {
+      let u_  = s.u[row][col]
+      let v_  = s.v[row][col]
+      let mag = (u_ * u_ + v_ * v_).sqrt()
+      buf.write_string("          \{mag}\n")
+    }
+  }
+  buf.write_string("        </DataArray>\n")
+
+  // ── Closing tags ──────────────────────────────────────────────────────────
+  buf.write_string("      </PointData>\n")
+  buf.write_string("    </Piece>\n")
+  buf.write_string("  </ImageData>\n")
+  buf.write_string("</VTKFile>\n")
 
   buf.to_string()
 }

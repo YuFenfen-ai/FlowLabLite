@@ -56,6 +56,7 @@ fn print_list_formats() -> Unit {
   println("  json      JSON (default, with local_viewer.html support)     \u2713")
   println("  csv       RFC 4180 CSV (.csv)                                \u2713")
   println("  vtk       VTK Legacy ASCII Format (.vtk, ParaView / VisIt)   \u2713")
+  println("  vti       VTK XML ImageData (.vti, ParaView preferred)       \u2713")
   println("  tecplot   Tecplot ASCII Data Format (.dat)                   \u2713")
   if netcdf_available {
     println("  netcdf    CF-1.11 NetCDF-4 (.nc, ncview / Panoply / CDO)    \u2713")
@@ -179,16 +180,20 @@ fn dispatch_format_cli(args : Array[String]) -> Unit {
     return
   }
 
-  // For VTK (one file per solver): default solver is "chorin"
-  if fmt == "vtk" {
-    let vtk_solver = if solver == "all" { "chorin" } else { solver }
-    let exports = collect_solver_exports(vtk_solver)
+  // For VTK / VTI (one file per solver): default solver is "chorin"
+  if fmt == "vtk" || fmt == "vti" {
+    let single_solver = if solver == "all" { "chorin" } else { solver }
+    let exports = collect_solver_exports(single_solver)
     if exports.is_empty() {
-      println("[io] Solver '\{vtk_solver}' is not available (check --solver or run_* flags).")
+      println("[io] Solver '\{single_solver}' is not available (check --solver or run_* flags).")
       println("[io] Available: chorin | simple | pcg | mac")
       return
     }
-    println(format_vtk(exports[0]))
+    if fmt == "vtk" {
+      println(format_vtk(exports[0]))
+    } else {
+      println(format_vti(exports[0]))
+    }
     return
   }
 

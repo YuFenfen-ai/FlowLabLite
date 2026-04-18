@@ -40,6 +40,7 @@ done
 if [[ -z "$OUTPUT_FILE" ]]; then
   case "$FORMAT" in
     vtk)     OUTPUT_FILE="cavity_${SOLVER}.vtk" ;;
+    vti)     OUTPUT_FILE="cavity_${SOLVER}.vti" ;;
     tecplot) OUTPUT_FILE="cavity_all.dat" ;;
     csv)     OUTPUT_FILE="cavity_all.csv" ;;
     list)    OUTPUT_FILE="" ;;
@@ -50,7 +51,7 @@ fi
 echo "[run_local] Building and running FlowLabLite locally..."
 echo "[run_local] Target: wasm (Wasmtime runtime)"
 if [[ "$FORMAT" != "json" && "$FORMAT" != "list" ]]; then
-  echo "[run_local] Format : $FORMAT  |  Solver: $SOLVER"
+  echo "[run_local] Format : $FORMAT  |  Solver: $SOLVER  |  Output: $OUTPUT_FILE"
 fi
 
 # ── Run the solver ─────────────────────────────────────────────────────────────
