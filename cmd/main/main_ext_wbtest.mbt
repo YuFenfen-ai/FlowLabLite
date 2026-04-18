@@ -1078,6 +1078,87 @@ test "sor_omega15_faster_than_gs" {
   assert_true(res_sor < res_gs)
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// O. Unit Tests — Convergence Monitor (monitor.mbt)  (T104–T108)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T104 [Unit / OBT]
+// compute_cfl_max: u=1 everywhere, v=0, dt=0.001, dx=dy=0.05.
+// CFL = |u|*dt/dx + |v|*dt/dy = 1.0*0.001/0.05 + 0.0 = 0.02.
+// This matches the default Re=20 worst-case estimate from solver_monitor.md.
+test "monitor_cfl_safe" {
+  let nr = 5
+  let nc = 5
+  let u  = create_zeros_2d(nr, nc)
+  let v  = create_zeros_2d(nr, nc)
+  for i = 0; i < nr; i = i + 1 {
+    for j = 0; j < nc; j = j + 1 {
+      u[i][j] = 1.0
+      v[i][j] = 0.0
+    }
+  }
+  let cfl = compute_cfl_max(u, v, nr, nc, 0.001, 0.05, 0.05)
+  assert_true((cfl - 0.02).abs() < 1.0e-12)
+}
+
+// T105 [Unit / EP / OBT]
+// compute_kinetic_energy: zero velocity field must give KE = 0.
+test "monitor_ke_zero" {
+  let nr = 5
+  let nc = 5
+  let u  = create_zeros_2d(nr, nc)
+  let v  = create_zeros_2d(nr, nc)
+  let ke = compute_kinetic_energy(u, v, nr, nc, 0.05, 0.05)
+  assert_true(ke.abs() < 1.0e-14)
+}
+
+// T106 [Unit / OBT]
+// compute_ru: when u_new == u_old, the numerator max|diff| = 0 → R_u = 0.
+// This verifies the converged-solution case (no change between steps).
+test "monitor_ru_zero" {
+  let nr = 5
+  let nc = 5
+  let u  = create_zeros_2d(nr, nc)
+  for i = 0; i < nr; i = i + 1 {
+    for j = 0; j < nc; j = j + 1 {
+      u[i][j] = (i + j).to_double() * 0.1
+    }
+  }
+  // u_new = u_old: clone u into a separate array
+  let u2 = create_zeros_2d(nr, nc)
+  copy_2d_array(u, u2)
+  let ru = compute_ru(u2, u, nr, nc)
+  assert_true(ru.abs() < 1.0e-14)
+}
+
+// T107 [Unit / EP]
+// format_monitor_csv must contain the expected header row.
+test "monitor_csv_header_contains_all_columns" {
+  let rec : MonitorRecord = {
+    step: 10, time: 0.01, div_norm: 1.5e-3,
+    r_u: 0.001, r_v: 0.002, ke: 0.05, cfl_max: 0.02, pcg_iters: 45,
+  }
+  let out = format_monitor_csv([rec], "mac", 100.0)
+  assert_true(out.contains("step,time,div_norm,r_u,r_v,ke,cfl_max,pcg_iters"))
+}
+
+// T108 [Unit / OBT]
+// compute_simple_residual_eq: a non-uniform u field must give a strictly
+// positive residual (momentum equations are not in balance for an arbitrary field).
+test "simple_residual_eq_positive" {
+  let nr  = 7
+  let nc  = 7
+  let u   = create_zeros_2d(nr, nc)
+  // Fill u with non-trivial non-constant values (not a solution of any equation)
+  for i = 0; i < nr; i = i + 1 {
+    for j = 0; j < nc; j = j + 1 {
+      u[i][j] = (i + 1).to_double() * (j + 1).to_double() * 0.01
+    }
+  }
+  let res = compute_simple_residual_eq(u, nr, nc, 0.1, 0.001, 0.05, 0.05)
+  assert_true(res > 0.0)
+}
+
 // T97 [Unit / BVA]
 // Both Ghia reference arrays must have exactly 17 data points and the same
 // length (symmetry check): yn, u (vertical centerline), xn, v (horizontal).
