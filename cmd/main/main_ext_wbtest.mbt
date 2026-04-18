@@ -914,3 +914,35 @@ test "vti_data_array_count_is_three" {
   })
   assert_eq(count, 3)
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// K. Unit Tests — Ghia (1982) Benchmark Data  (T97–T98)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T97 [Unit / BVA]
+// Both Ghia reference arrays must have exactly 17 data points and the same
+// length (symmetry check): yn, u (vertical centerline), xn, v (horizontal).
+test "ghia_data_arrays_length_17" {
+  assert_eq(ghia_re100_yn.length(), 17)
+  assert_eq(ghia_re100_u.length(),  17)
+  assert_eq(ghia_re100_xn.length(), 17)
+  assert_eq(ghia_re100_v.length(),  17)
+}
+
+// T98 [Unit / BVA]
+// Boundary values must be exact per Ghia Table 1 & 2:
+//   u[0]  = 0.0  (y=0 bottom wall, no-slip)
+//   u[16] = 1.0  (y=1 top lid, driving velocity)
+//   v[0]  = 0.0  (x=0 left wall, no-slip)
+//   v[16] = 0.0  (x=1 right wall, no-slip)
+test "ghia_boundary_values_exact" {
+  assert_eq(ghia_re100_u[0],  0.0)
+  assert_eq(ghia_re100_u[16], 1.0)
+  assert_eq(ghia_re100_v[0],  0.0)
+  assert_eq(ghia_re100_v[16], 0.0)
+  // Also verify domain endpoints in Ghia's [0,1] coordinates
+  assert_eq(ghia_re100_yn[0],  0.0)
+  assert_eq(ghia_re100_yn[16], 1.0)
+  assert_eq(ghia_re100_xn[0],  0.0)
+  assert_eq(ghia_re100_xn[16], 1.0)
+}

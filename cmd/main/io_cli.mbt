@@ -39,7 +39,7 @@ fn parse_pos_int(s : String, def : Int) -> Int {
 fn cli_wants_format(args : Array[String]) -> Bool {
   let mut i = 1
   while i < args.length() {
-    if args[i] == "--format" || args[i] == "--list-formats" {
+    if args[i] == "--format" || args[i] == "--list-formats" || args[i] == "--validate-ghia" {
       return true
     }
     i = i + 1
@@ -192,6 +192,23 @@ fn dispatch_format_cli(args : Array[String]) -> Unit {
 
   let fmt    = cli_get_string(args, "--format",  "json")
   let solver = cli_get_string(args, "--solver",  "all")
+
+  // --validate-ghia: compare solver solution against Ghia (1982) Re=100 benchmark.
+  // Handled before the fmt=="json" guard so it works without --format.
+  if args.contains("--validate-ghia") {
+    let ghia_solver = if solver == "all" { "chorin" } else { solver }
+    let exports = collect_solver_exports(ghia_solver)
+    if exports.is_empty() {
+      println("[io] Solver '\{ghia_solver}' is not available for Ghia comparison.")
+      return
+    }
+    let re_str = cli_get_string(args, "--re", "0")
+    let re_val = if re_str == "0" { 2.0 / g_nu_runtime[0] }
+                 else { parse_pos_int(re_str, 20).to_double() }
+    let result = ghia_compare(exports[0])
+    println(format_ghia_result(result, exports[0].name, re_val, exports[0].steps))
+    return
+  }
 
   if fmt == "json" {
     println("[io] Hint: omit --format (or all flags) for the full JSON output with timing.")
