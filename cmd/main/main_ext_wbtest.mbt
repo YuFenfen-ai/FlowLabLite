@@ -990,6 +990,24 @@ test "quick_linear_field_exact" {
 // M. Unit Tests — SOR / SSOR Pressure Solvers  (T101–T102)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════════
+// N. Unit Tests — HTML Self-Contained Report  (T103)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T103 [Unit / EP]
+// format_html_report must produce a valid HTML document:
+//   - contains <!DOCTYPE html> declaration
+//   - contains the VARIABLES sentinel (used by local_viewer.html to detect report format)
+//   - contains Chart.js CDN script tag
+test "html_report_structure" {
+  let nc = 5
+  let s  = make_test_export("chorin", nc, 0.5, 0.3, 0.1)
+  let out = format_html_report([s], 20.0, 100)
+  assert_true(out.contains("<!DOCTYPE html>"))
+  assert_true(out.contains("VARIABLES"))
+  assert_true(out.contains("chart.js"))
+}
+
 // T101 [Unit / EP / OBT]
 // SOR with ω=1.0 must be equivalent to standard Gauss-Seidel.
 // Both start from the same zero initial pressure and run on the same smooth RHS;

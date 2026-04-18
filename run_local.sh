@@ -45,6 +45,7 @@ if [[ -z "$OUTPUT_FILE" ]]; then
     csv)        OUTPUT_FILE="cavity_all.csv" ;;
     centerline) OUTPUT_FILE="centerline_${SOLVER}.csv" ;;
     monitor)    OUTPUT_FILE="monitor_${SOLVER}.csv" ;;
+    html)       OUTPUT_FILE="report_${SOLVER}.html" ;;
     list)    OUTPUT_FILE="" ;;
     *)       OUTPUT_FILE="results.json" ;;
   esac

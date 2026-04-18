@@ -76,6 +76,7 @@ fn print_list_formats() -> Unit {
   println("  vti        VTK XML ImageData (.vti, ParaView preferred)      \u2713")
   println("  tecplot    Tecplot ASCII Data Format (.dat)                  \u2713")
   println("  centerline Centerline velocity CSV (u_vcl + v_hcl)          \u2713")
+  println("  html       Self-contained HTML report (Chart.js, CDN)       \u2713")
   println("  monitor    Convergence monitor history CSV                   \u2713")
   if netcdf_available {
     println("  netcdf    CF-1.11 NetCDF-4 (.nc, ncview / Panoply / CDO)    \u2713")
@@ -265,6 +266,11 @@ fn dispatch_format_cli(args : Array[String]) -> Unit {
       ke: -1.0, cfl_max: -1.0, pcg_iters: 0,
     })
     println(format_monitor_csv(records, s0.name, re))
+  } else if fmt == "html" {
+    let re_str = cli_get_string(args, "--re", "0")
+    let re_val = if re_str == "0" { 2.0 / g_nu_runtime[0] }
+                 else { parse_pos_int(re_str, 20).to_double() }
+    println(format_html_report(solvers, re_val, solvers[0].steps))
   } else if fmt == "netcdf" {
     match format_netcdf(solvers[0]) {
       Ok(s)    => println(s)

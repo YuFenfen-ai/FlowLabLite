@@ -346,3 +346,165 @@ fn format_vti(s : SolverExport) -> String {
 
   buf.to_string()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML Self-Contained Report
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Generates a single-file HTML report with:
+//   - Solver metadata table (solver name, Re, steps, grid)
+//   - Centerline velocity plots (u on vertical centerline, v on horizontal)
+//     using inline Chart.js (CDN) line charts
+//   - Optional Ghia (1982) Re=100 reference overlay when re≈100
+//
+// All data is embedded as inline JavaScript arrays; no external data files needed.
+// Chart.js is loaded from the official CDN (requires network access to render).
+//
+// CLI: --format html [--solver chorin|pcg|mac|simple]
+
+/// Format a list of Double values as a compact JS array literal, e.g. "[1.23,4.56]".
+fn fmt_js_array(arr : Array[Double]) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string("[")
+  let mut first = true
+  arr.each(fn(v) {
+    if not(first) { buf.write_string(",") }
+    buf.write_string("\{v}")
+    first = false
+  })
+  buf.write_string("]")
+  buf.to_string()
+}
+
+/// Generate a self-contained HTML report for the first solver in the list.
+///
+/// Includes:
+///   - Metadata table (solver, Re, steps, grid size, domain)
+///   - Chart.js line plot: u along vertical centerline (x = L/2)
+///   - Chart.js line plot: v along horizontal centerline (y = L/2)
+///   - If re ≈ 100 (±1), overlays Ghia (1982) reference data points
+fn format_html_report(
+  solvers : Array[SolverExport],
+  re      : Double,
+  steps   : Int,
+) -> String {
+  if solvers.is_empty() { return "<!-- No solver data -->" }
+  let s = solvers[0]
+
+  // Extract centerline arrays
+  let jmid = s.nc / 2
+  let imid = s.nc / 2
+
+  // u along vertical centerline (col = jmid, all rows)
+  let u_vcl : Array[Double] = Array::make(s.nc, 0.0)
+  let y_vcl : Array[Double] = Array::make(s.nc, 0.0)
+  for i = 0; i < s.nc; i = i + 1 {
+    u_vcl[i] = s.u[i][jmid]
+    y_vcl[i] = s.y0 + i.to_double() * s.h
+  }
+
+  // v along horizontal centerline (row = imid, all cols)
+  let v_hcl : Array[Double] = Array::make(s.nc, 0.0)
+  let x_hcl : Array[Double] = Array::make(s.nc, 0.0)
+  for j = 0; j < s.nc; j = j + 1 {
+    v_hcl[j] = s.v[imid][j]
+    x_hcl[j] = s.x0 + j.to_double() * s.h
+  }
+
+  // Ghia overlay (only when re ≈ 100)
+  let show_ghia = (re - 100.0).abs() < 1.0
+  let ghia_u_js = if show_ghia { fmt_js_array(ghia_re100_u)  } else { "[]" }
+  let ghia_yn_js = if show_ghia {
+    // Map Ghia [0,1] y-coords to our [0,2] domain
+    let mapped : Array[Double] = Array::make(ghia_re100_yn.length(), 0.0)
+    for k = 0; k < ghia_re100_yn.length(); k = k + 1 {
+      mapped[k] = ghia_re100_yn[k] * 2.0
+    }
+    fmt_js_array(mapped)
+  } else { "[]" }
+  let ghia_v_js = if show_ghia { fmt_js_array(ghia_re100_v)  } else { "[]" }
+  let ghia_xn_js = if show_ghia {
+    let mapped : Array[Double] = Array::make(ghia_re100_xn.length(), 0.0)
+    for k = 0; k < ghia_re100_xn.length(); k = k + 1 {
+      mapped[k] = ghia_re100_xn[k] * 2.0
+    }
+    fmt_js_array(mapped)
+  } else { "[]" }
+
+  let buf = StringBuilder::new()
+
+  // ── HTML document ─────────────────────────────────────────────────────────
+  buf.write_string("<!DOCTYPE html>\n")
+  buf.write_string("<html lang=\"en\">\n<head>\n")
+  buf.write_string("<meta charset=\"UTF-8\">\n")
+  buf.write_string("<title>FlowLabLite Report — \{s.label} Re=\{re}</title>\n")
+  buf.write_string("<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>\n")
+  buf.write_string("<style>\n")
+  buf.write_string("body{font-family:monospace;max-width:900px;margin:2em auto;}\n")
+  buf.write_string("table{border-collapse:collapse;margin-bottom:1em;}\n")
+  buf.write_string("th,td{border:1px solid #ccc;padding:4px 10px;}\n")
+  buf.write_string(".chart-row{display:flex;gap:1em;}\n")
+  buf.write_string(".chart-box{flex:1;}\n")
+  buf.write_string("</style>\n</head>\n<body>\n")
+
+  // ── Metadata table ────────────────────────────────────────────────────────
+  buf.write_string("<h1>FlowLabLite — Simulation Report</h1>\n")
+  buf.write_string("<table>\n")
+  buf.write_string("<tr><th>Solver</th><td>\{s.label}</td></tr>\n")
+  buf.write_string("<tr><th>Re</th><td>\{re}</td></tr>\n")
+  buf.write_string("<tr><th>Steps / Iters</th><td>\{steps}</td></tr>\n")
+  buf.write_string("<tr><th>Grid</th><td>\{s.nc}×\{s.nc}</td></tr>\n")
+  buf.write_string("<tr><th>Spacing h</th><td>\{s.h}</td></tr>\n")
+  buf.write_string("</table>\n")
+
+  // ── Ghia notice ───────────────────────────────────────────────────────────
+  if show_ghia {
+    buf.write_string("<p>Ghia (1982) Re=100 reference data overlaid (circles).</p>\n")
+  }
+
+  // ── Charts ────────────────────────────────────────────────────────────────
+  buf.write_string("<div class=\"chart-row\">\n")
+  buf.write_string("  <div class=\"chart-box\"><canvas id=\"chartU\"></canvas></div>\n")
+  buf.write_string("  <div class=\"chart-box\"><canvas id=\"chartV\"></canvas></div>\n")
+  buf.write_string("</div>\n")
+
+  // ── Inline data + Chart.js init ───────────────────────────────────────────
+  buf.write_string("<script>\n")
+  buf.write_string("const u_vcl = \{fmt_js_array(u_vcl)};\n")
+  buf.write_string("const y_vcl = \{fmt_js_array(y_vcl)};\n")
+  buf.write_string("const v_hcl = \{fmt_js_array(v_hcl)};\n")
+  buf.write_string("const x_hcl = \{fmt_js_array(x_hcl)};\n")
+  buf.write_string("const ghia_yn = \{ghia_yn_js};\n")
+  buf.write_string("const ghia_u  = \{ghia_u_js};\n")
+  buf.write_string("const ghia_xn = \{ghia_xn_js};\n")
+  buf.write_string("const ghia_v  = \{ghia_v_js};\n")
+  buf.write_string("const VARIABLES = ['u_vcl','y_vcl','v_hcl','x_hcl'];\n")
+  // Chart U
+  buf.write_string("new Chart(document.getElementById('chartU'),{type:'line',\n")
+  buf.write_string("  data:{datasets:[\n")
+  buf.write_string("    {label:'u (solver)',data:y_vcl.map((y,i)=>({x:u_vcl[i],y:y})),")
+  buf.write_string("borderColor:'steelblue',pointRadius:0,showLine:true},\n")
+  buf.write_string("    ...(ghia_yn.length?[{label:'Ghia (1982)',")
+  buf.write_string("data:ghia_yn.map((y,i)=>({x:ghia_u[i],y:y})),")
+  buf.write_string("borderColor:'red',pointStyle:'circle',pointRadius:5,showLine:false}]:[]),\n")
+  buf.write_string("  ]},\n")
+  buf.write_string("  options:{scales:{x:{title:{display:true,text:'u/U'}},")
+  buf.write_string("y:{title:{display:true,text:'y'}}},\n")
+  buf.write_string("  plugins:{title:{display:true,text:'u — vertical centerline (x=L/2)'}}}});\n")
+  // Chart V
+  buf.write_string("new Chart(document.getElementById('chartV'),{type:'line',\n")
+  buf.write_string("  data:{datasets:[\n")
+  buf.write_string("    {label:'v (solver)',data:x_hcl.map((x,i)=>({x:x,y:v_hcl[i]})),")
+  buf.write_string("borderColor:'steelblue',pointRadius:0,showLine:true},\n")
+  buf.write_string("    ...(ghia_xn.length?[{label:'Ghia (1982)',")
+  buf.write_string("data:ghia_xn.map((x,i)=>({x:x,y:ghia_v[i]})),")
+  buf.write_string("borderColor:'red',pointStyle:'circle',pointRadius:5,showLine:false}]:[]),\n")
+  buf.write_string("  ]},\n")
+  buf.write_string("  options:{scales:{x:{title:{display:true,text:'x'}},")
+  buf.write_string("y:{title:{display:true,text:'v/U'}}},\n")
+  buf.write_string("  plugins:{title:{display:true,text:'v — horizontal centerline (y=L/2)'}}}});\n")
+  buf.write_string("</script>\n")
+
+  buf.write_string("</body>\n</html>\n")
+  buf.to_string()
+}
