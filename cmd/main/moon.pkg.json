@@ -1,7 +1,8 @@
 {
   "import": [
     "moonbitlang/core",
-    "moonbitlang/core/bench"
+    "moonbitlang/core/bench",
+    "moonbitlang/core/env"
   ],
   "link": {
     "wasm-gc": {

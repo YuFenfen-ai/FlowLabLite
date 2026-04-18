@@ -534,8 +534,8 @@ fn cavity_flow_array(
       v[i][nx - 1] = 0.0
     }
 
-    // Progress output every 10 steps
-    if (n + 1) % 10 == 0 {
+    // Progress output every 10 steps (suppressed in quiet/format mode)
+    if (n + 1) % 10 == 0 && not(g_quiet_mode[0]) {
       println("Time step \{n + 1}/\{nt} completed")
     }
   }
@@ -1773,7 +1773,7 @@ fn cavity_flow_pcg(
       v[i][nx - 1] = 0.0
     }
 
-    if (n + 1) % 10 == 0 {
+    if (n + 1) % 10 == 0 && not(g_quiet_mode[0]) {
       println("PCG step \{n + 1}/\{nt_steps}: pressure iters=\{iters}")
     }
   }
@@ -2236,7 +2236,7 @@ fn cavity_flow_mac(
     let iters = pressure_poisson_pcg_mac(p, dx_, dy_, b)
     pcg_iters[0] = iters
     mac_correct_velocity(us, vs, p, dt_, dx_, dy_, rho_, u, v)
-    if (n + 1) % 10 == 0 {
+    if (n + 1) % 10 == 0 && not(g_quiet_mode[0]) {
       println("MAC step \{n + 1}/\{nt_steps}: pressure iters=\{iters}")
     }
   }
@@ -2264,6 +2264,11 @@ let g_p_mac : Array[Array[Double]] = {
 
 let g_steps_mac      : Array[Int] = [0]
 let g_mac_last_iters : Array[Int] = [0]
+
+// ── Quiet-mode flag (CLI format output suppresses progress printing) ───────────
+// Set to true by fn main before running solvers in --format mode.
+// Avoids polluting stdout when format output is redirected to a file.
+let g_quiet_mode : Array[Bool] = [false]
 
 // ── WASM API – MAC solver ─────────────────────────────────────────────────────
 
@@ -2463,6 +2468,22 @@ fn fib(n : Int) -> Int {
 //   2. Open cmd/main/local_viewer.html in a browser, drag results.json in.
 //   3. Use the Chorin / SIMPLE tab to switch between solver views.
 fn main {
+  // ── CLI format dispatch (--format / --list-formats) ───────────────────────
+  // When any format flag is present, run all active solvers silently and emit
+  // the requested format to stdout.  Clean stdout allows shell redirection:
+  //   moon run cmd/main --target wasm -- --format vtk > cavity.vtk
+  let _cli_args = @env.args()
+  if cli_wants_format(_cli_args) {
+    g_quiet_mode[0] = true
+    if run_chorin { init_simulation();         run_n_steps(local_nt)             }
+    if run_simple { init_simple();             run_simple_n_iter(local_simple_n) }
+    if run_pcg    { init_chorin_pcg();         run_chorin_pcg_n_steps(local_pcg_nt) }
+    if run_mac    { init_mac();                run_mac_n_steps(local_mac_nt)     }
+    dispatch_format_cli(_cli_args)
+    return
+  }
+
+  // ── Default path: full JSON output with timing (existing behaviour) ────────
   let prog_ts = @bench.monotonic_clock_start()
 
   println("=== FlowLabLite – Local CFD Solver ===")

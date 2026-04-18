@@ -386,7 +386,10 @@
 
     <div class="tsep"></div>
 
-    <button class="btn" id="downloadData" title="Export CSV  [D]">⬇ CSV</button>
+    <!-- Download buttons (browser JS generates text from WASM data) -->
+    <button class="btn" id="downloadCSV"     title="Download RFC 4180 CSV  [D]">⬇ CSV</button>
+    <button class="btn" id="downloadVTK"     title="Download VTK Legacy ASCII (.vtk, ParaView)">⬇ VTK</button>
+    <button class="btn" id="downloadTecplot" title="Download Tecplot ASCII (.dat, Tecplot 360)">⬇ Tecplot</button>
 
 </div>
 
@@ -620,7 +623,7 @@
                 </p>
                 <p style="margin-top:6px;color:#475569;font-size:10px">
                     Shortcuts: Space=Play/Pause · →=Step · R=Reset<br>
-                    S=Streamlines · D=CSV
+                    S=Streamlines · D=CSV download
                 </p>
                 <p style="margin-top:6px;font-size:10px;color:#475569">
                     Build: <code style="background:var(--c-surface2);padding:1px 3px;border-radius:3px">bash build_wasm.sh release</code><br>
@@ -796,7 +799,9 @@ class FluidSimulationVisualizer {
             document.getElementById('toggleStreamlines').classList.toggle('active', this.showStreamlines);
             if (this.simulationData) this.visualizeResults();
         });
-        document.getElementById('downloadData').addEventListener('click', () => this.downloadData());
+        document.getElementById('downloadCSV').addEventListener('click',     () => this.downloadCSV());
+        document.getElementById('downloadVTK').addEventListener('click',     () => this.downloadVTK());
+        document.getElementById('downloadTecplot').addEventListener('click', () => this.downloadTecplot());
 
         document.addEventListener('keydown', e => {
             if (e.target.tagName === 'INPUT') return;
@@ -813,7 +818,7 @@ class FluidSimulationVisualizer {
                 case 's': case 'S':
                     document.getElementById('toggleStreamlines').click();
                     break;
-                case 'd': case 'D': this.downloadData(); break;
+                case 'd': case 'D': this.downloadCSV(); break;
             }
         });
     }
@@ -1609,17 +1614,106 @@ class FluidSimulationVisualizer {
     }
 
     /* ── CSV download ── */
-    downloadData() {
-        if (!this.simulationData) { alert('No data to download.'); return; }
-        let csv = 'i,j,x,y,u,v,magnitude,pressure\n';
-        this.simulationData.forEach(pt => {
-            csv += `${pt.i??''},${pt.j??''},${pt.x},${pt.y},${pt.u},${pt.v},${pt.magnitude},${pt.p??''}\n`;
-        });
+    /** Trigger a browser file download from a text string. */
+    _triggerDownload(text, filename, mime) {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-        a.download = `${this.activeSolver}_flow_data.csv`;
+        a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+        a.download = filename;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
+    }
+
+    _downloadGuard() {
+        if (!this.simulationData) { alert('Run the simulation first.'); return false; }
+        return true;
+    }
+
+    /** RFC 4180 CSV — all field values for the active solver. */
+    downloadCSV() {
+        if (!this._downloadGuard()) return;
+        const solver = this.activeSolver;
+        const w = this.wasmModule;
+        const m = SOLVER_META[solver];
+        const step = m.steps(w);
+        const re = this.config ? this.config.re.toFixed(0) : '?';
+        let out = `# FlowLabLite export | solver=${solver} | Re=${re} | step=${step}\n`;
+        out += 'solver,i,j,x,y,u,v,p,vel_mag\n';
+        this.simulationData.forEach(pt => {
+            const mag = Math.sqrt(pt.u*pt.u + pt.v*pt.v);
+            out += `${solver},${pt.i},${pt.j},${pt.x},${pt.y},${pt.u},${pt.v},${pt.p},${mag}\n`;
+        });
+        this._triggerDownload(out, `flowlab_${solver}_step${step}.csv`, 'text/csv');
+    }
+
+    /**
+     * VTK Legacy ASCII STRUCTURED_GRID — compatible with ParaView ≥ 5.0.
+     * Fields: SCALARS pressure, VECTORS velocity, SCALARS vel_magnitude.
+     * Point ordering: col (x) varies fastest — matches simulationData's (row-major) order.
+     */
+    downloadVTK() {
+        if (!this._downloadGuard()) return;
+        const solver = this.activeSolver;
+        const w = this.wasmModule;
+        const m = SOLVER_META[solver];
+        const nc   = m.nx(w);            // same for nx and ny (square grid)
+        const step = m.steps(w);
+        const re   = this.config ? this.config.re.toFixed(0) : '?';
+        const npts = nc * nc;
+        const lines = [];
+
+        lines.push('# vtk DataFile Version 2.0');
+        lines.push(`FlowLabLite ${solver} Re=${re} step=${step}`);
+        lines.push('ASCII');
+        lines.push('DATASET STRUCTURED_GRID');
+        lines.push(`DIMENSIONS ${nc} ${nc} 1`);
+        lines.push(`POINTS ${npts} double`);
+        this.simulationData.forEach(pt => lines.push(`${pt.x} ${pt.y} 0.0`));
+
+        lines.push('');
+        lines.push(`POINT_DATA ${npts}`);
+        lines.push('SCALARS pressure double 1');
+        lines.push('LOOKUP_TABLE default');
+        this.simulationData.forEach(pt => lines.push(`${pt.p}`));
+
+        lines.push('');
+        lines.push('VECTORS velocity double');
+        this.simulationData.forEach(pt => lines.push(`${pt.u} ${pt.v} 0.0`));
+
+        lines.push('');
+        lines.push('SCALARS vel_magnitude double 1');
+        lines.push('LOOKUP_TABLE default');
+        this.simulationData.forEach(pt => lines.push(`${Math.sqrt(pt.u*pt.u + pt.v*pt.v)}`));
+
+        this._triggerDownload(lines.join('\n') + '\n',
+            `flowlab_${solver}_step${step}.vtk`, 'text/plain');
+    }
+
+    /**
+     * Tecplot ASCII Data Format (.dat) — ZONE DATAPACKING=POINT.
+     * Compatible with Tecplot 360 EX and ParaView (Tecplot reader plug-in).
+     */
+    downloadTecplot() {
+        if (!this._downloadGuard()) return;
+        const solver = this.activeSolver;
+        const w = this.wasmModule;
+        const m = SOLVER_META[solver];
+        const nc   = m.nx(w);
+        const step = m.steps(w);
+        const re   = this.config ? this.config.re.toFixed(0) : '?';
+        const dt_  = this.config ? this.config.dt : 0.001;
+        const time = (step * dt_).toFixed(6);
+        const lines = [];
+
+        lines.push(`TITLE = "FlowLabLite ${solver} Re=${re} step=${step}"`);
+        lines.push('VARIABLES = "X", "Y", "U", "V", "P", "VelMag"');
+        lines.push(`ZONE T="${solver}", I=${nc}, J=${nc}, K=1, DATAPACKING=POINT, SOLUTIONTIME=${time}`);
+        this.simulationData.forEach(pt => {
+            const mag = Math.sqrt(pt.u*pt.u + pt.v*pt.v);
+            lines.push(`${pt.x} ${pt.y} ${pt.u} ${pt.v} ${pt.p} ${mag}`);
+        });
+
+        this._triggerDownload(lines.join('\n') + '\n',
+            `flowlab_${solver}_step${step}.dat`, 'text/plain');
     }
 }
 

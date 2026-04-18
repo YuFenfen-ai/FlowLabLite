@@ -703,3 +703,124 @@ test "chorin_pcg_produces_vortex_with_all_preconditioners" {
   pressure_poisson_pcg_gamg(p_gamg, dx, dy, b_test) |> ignore
   assert_true(p_gamg[ny / 2][nx / 2] < 0.0)
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// I. Unit Tests — I/O Format Writers  (T84–T91)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// All tests use synthetic SolverExport values to avoid solver-state dependency.
+// Tests are pure (no global-state mutation) and fast (small grids, no solver runs).
+
+/// Helper: create a small SolverExport filled with constant field values.
+fn make_test_export(
+  name  : String,
+  nc    : Int,
+  fill_u : Double,
+  fill_v : Double,
+  fill_p : Double,
+) -> SolverExport {
+  let u = create_zeros_2d(nc, nc)
+  let v = create_zeros_2d(nc, nc)
+  let p = create_zeros_2d(nc, nc)
+  for i = 0; i < nc; i = i + 1 {
+    for j = 0; j < nc; j = j + 1 {
+      u[i][j] = fill_u
+      v[i][j] = fill_v
+      p[i][j] = fill_p
+    }
+  }
+  { name, label: "test", nc, h: 0.05, x0: 0.0, y0: 0.0, steps: 10, u, v, p }
+}
+
+// T84 [Unit / EP]
+// format_csv must include the standard RFC 4180 header row.
+test "csv_header_present" {
+  let s = make_test_export("chorin", 3, 0.0, 0.0, 0.0)
+  let csv = format_csv([s])
+  assert_true(csv.contains("solver,i,j,x,y,u,v,p,vel_mag"))
+}
+
+// T85 [Unit / BVA / OBT]
+// format_csv for a single nc=3 solver must contain exactly nc*nc = 9 data rows
+// (one line per grid point, excluding comment and header lines).
+test "csv_row_count" {
+  let nc = 3
+  let s  = make_test_export("test", nc, 1.0, 0.5, 0.1)
+  let csv = format_csv([s])
+  // Count lines that start with "test," (the solver name prefix)
+  let mut data_rows = 0
+  csv.split("\n").each(fn(line) {
+    if line.has_prefix("test,") {
+      data_rows = data_rows + 1
+    }
+  })
+  assert_eq(data_rows, nc * nc)
+}
+
+// T86 [Unit / EP]
+// format_vtk must produce a valid STRUCTURED_GRID header with correct DIMENSIONS.
+test "vtk_dimensions_header" {
+  let nc = 4
+  let s  = make_test_export("chorin", nc, 0.0, 0.0, 0.0)
+  let vtk = format_vtk(s)
+  assert_true(vtk.contains("DATASET STRUCTURED_GRID"))
+  assert_true(vtk.contains("DIMENSIONS \{nc} \{nc} 1"))
+}
+
+// T87 [Unit / OBT]
+// format_vtk POINTS count must equal nc*nc.
+test "vtk_points_count" {
+  let nc   = 5
+  let npts = nc * nc
+  let s    = make_test_export("pcg", nc, 0.0, 0.0, 0.0)
+  let vtk  = format_vtk(s)
+  assert_true(vtk.contains("POINTS \{npts} double"))
+}
+
+// T88 [Unit / EP]
+// format_tecplot for k solvers must contain exactly k ZONE lines.
+test "tecplot_zone_count" {
+  let s1 = make_test_export("chorin", 3, 0.0, 0.0, 0.0)
+  let s2 = make_test_export("simple", 3, 0.0, 0.0, 0.0)
+  let dat = format_tecplot([s1, s2])
+  let mut zone_count = 0
+  dat.split("\n").each(fn(line) {
+    if line.has_prefix("ZONE T=") {
+      zone_count = zone_count + 1
+    }
+  })
+  assert_eq(zone_count, 2)
+}
+
+// T89 [Unit / PP / Negative path]
+// format_netcdf stub must always return Err (never panic, never Ok).
+test "netcdf_stub_returns_err" {
+  let s = make_test_export("chorin", 3, 0.0, 0.0, 0.0)
+  match format_netcdf(s) {
+    Err(msg) => assert_true(msg.length() > 0)
+    Ok(_)    => assert_true(false)   // must not reach here
+  }
+}
+
+// T90 [Unit / OBT]
+// format_vtk must contain the POINT_DATA keyword followed by the total count.
+// This validates that the SCALARS/VECTORS sections are properly introduced.
+// (MoonBit renders Double 0.0 as "0", so we verify POINT_DATA header, not coordinates.)
+test "vtk_point_data_header" {
+  let nc   = 4
+  let npts = nc * nc
+  let s    = make_test_export("chorin", nc, 0.0, 0.0, 0.0)
+  let vtk  = format_vtk(s)
+  assert_true(vtk.contains("POINT_DATA \{npts}"))
+  assert_true(vtk.contains("SCALARS pressure double 1"))
+  assert_true(vtk.contains("VECTORS velocity double"))
+}
+
+// T91 [Unit / OBT]
+// format_tecplot SOLUTIONTIME for a solver with steps=10, dt=0.001 must be 0.01.
+test "tecplot_solution_time" {
+  let s   = make_test_export("chorin", 3, 0.0, 0.0, 0.0)
+  // s.steps = 10, dt = 0.001 (module constant) → SOLUTIONTIME = 0.01
+  let dat = format_tecplot([s])
+  assert_true(dat.contains("SOLUTIONTIME=\{10.0 * dt}"))
+}
