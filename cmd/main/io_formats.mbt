@@ -181,6 +181,98 @@ fn format_tecplot(solvers : Array[SolverExport]) -> String {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Centerline velocity CSV
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Produce a CSV of centerline velocity profiles for one solver.
+///
+/// Extracts:
+///   u_vcl — u along the vertical centerline   (col = nc/2, all rows)
+///   v_hcl — v along the horizontal centerline (row = nc/2, all cols)
+///
+/// Output columns: component, index, coord, value
+///   component: "u_vcl" or "v_hcl"
+///   index    : grid index (0..nc-1)
+///   coord    : physical coordinate (y for u_vcl, x for v_hcl)
+///   value    : velocity value at that point
+///
+/// Total rows = 2 × nc (nc for u_vcl + nc for v_hcl).
+fn format_centerline_csv(s : SolverExport) -> String {
+  let re  = 2.0 / nu
+  let buf = StringBuilder::new()
+  buf.write_string("# FlowLabLite centerline velocity | solver=\{s.name} | Re=\{re} | step=\{s.steps}\n")
+  buf.write_string("component,index,coord,value\n")
+
+  // u along vertical centerline (x = x0 + (nc/2)*h, y varies)
+  let jmid = s.nc / 2
+  for row = 0; row < s.nc; row = row + 1 {
+    let y = s.y0 + row.to_double() * s.h
+    let u_val = s.u[row][jmid]
+    buf.write_string("u_vcl,\{row},\{y},\{u_val}\n")
+  }
+
+  // v along horizontal centerline (y = y0 + (nc/2)*h, x varies)
+  let imid = s.nc / 2
+  for col = 0; col < s.nc; col = col + 1 {
+    let x = s.x0 + col.to_double() * s.h
+    let v_val = s.v[imid][col]
+    buf.write_string("v_hcl,\{col},\{x},\{v_val}\n")
+  }
+
+  buf.to_string()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monitor history CSV  (MonitorRecord — unified residual + physics monitor)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One monitoring snapshot at a given step.
+///
+/// Fields:
+///   step      — time step number (or SIMPLE iteration)
+///   time      — physical time = step × dt (pseudo-time for SIMPLE)
+///   div_norm  — divergence norm (mass conservation indicator)
+///   r_u       — relative u velocity change between snapshots (-1.0 = not available)
+///   r_v       — relative v velocity change between snapshots (-1.0 = not available)
+///   ke        — total kinetic energy (0.5 · Σ(u²+v²)·dx·dy)
+///   cfl_max   — maximum CFL number (-1.0 = not applicable for steady-state)
+///   pcg_iters — pressure solver iteration count (50 for GS-fixed; actual for PCG)
+struct MonitorRecord {
+  step      : Int
+  time      : Double
+  div_norm  : Double
+  r_u       : Double
+  r_v       : Double
+  ke        : Double
+  cfl_max   : Double
+  pcg_iters : Int
+}
+
+/// Produce a CSV of monitoring history records.
+///
+/// Header comment includes solver name and key parameters.
+/// Columns: step, time, div_norm, r_u, r_v, ke, cfl_max, pcg_iters
+/// Values of -1.0 are rendered as "-" to indicate "not available".
+fn format_monitor_csv(
+  records     : Array[MonitorRecord],
+  solver_name : String,
+  re          : Double,
+) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string("# FlowLabLite monitor | solver=\{solver_name} | Re=\{re} | dt=\{dt}\n")
+  buf.write_string("step,time,div_norm,r_u,r_v,ke,cfl_max,pcg_iters\n")
+  for k = 0; k < records.length(); k = k + 1 {
+    let r = records[k]
+    // Render -1.0 sentinel as "-"
+    let r_u_str   = if r.r_u    < 0.0 { "-" } else { "\{r.r_u}" }
+    let r_v_str   = if r.r_v    < 0.0 { "-" } else { "\{r.r_v}" }
+    let cfl_str   = if r.cfl_max < 0.0 { "-" } else { "\{r.cfl_max}" }
+    buf.write_string("\{r.step},\{r.time},\{r.div_norm},\{r_u_str},\{r_v_str},\{r.ke},\{cfl_str},\{r.pcg_iters}\n")
+  }
+  buf.to_string()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // VTK XML ImageData (.vti)  (VTK XML Formats v0.1, ImageData)
 // ─────────────────────────────────────────────────────────────────────────────
 

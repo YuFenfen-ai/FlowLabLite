@@ -53,11 +53,13 @@ fn cli_get_string(
 
 fn print_list_formats() -> Unit {
   println("Available formats in this build:")
-  println("  json      JSON (default, with local_viewer.html support)     \u2713")
-  println("  csv       RFC 4180 CSV (.csv)                                \u2713")
-  println("  vtk       VTK Legacy ASCII Format (.vtk, ParaView / VisIt)   \u2713")
-  println("  vti       VTK XML ImageData (.vti, ParaView preferred)       \u2713")
-  println("  tecplot   Tecplot ASCII Data Format (.dat)                   \u2713")
+  println("  json       JSON (default, with local_viewer.html support)    \u2713")
+  println("  csv        RFC 4180 CSV (.csv)                               \u2713")
+  println("  vtk        VTK Legacy ASCII Format (.vtk, ParaView / VisIt)  \u2713")
+  println("  vti        VTK XML ImageData (.vti, ParaView preferred)      \u2713")
+  println("  tecplot    Tecplot ASCII Data Format (.dat)                  \u2713")
+  println("  centerline Centerline velocity CSV (u_vcl + v_hcl)          \u2713")
+  println("  monitor    Convergence monitor history CSV                   \u2713")
   if netcdf_available {
     println("  netcdf    CF-1.11 NetCDF-4 (.nc, ncview / Panoply / CDO)    \u2713")
   } else {
@@ -208,6 +210,27 @@ fn dispatch_format_cli(args : Array[String]) -> Unit {
     println(format_csv(solvers))
   } else if fmt == "tecplot" {
     println(format_tecplot(solvers))
+  } else if fmt == "centerline" {
+    // Centerline: output first available solver (or filtered by --solver)
+    println(format_centerline_csv(solvers[0]))
+  } else if fmt == "monitor" {
+    // Monitor: build a simple residual history by running the first solver
+    // in record_interval-step batches and collecting div_norm at each batch.
+    // Uses the current global state (already run above).
+    let re = 2.0 / nu
+    let records : Array[MonitorRecord] = []
+    // Step 0: record initial state (already-run solver's current div_norm)
+    let s0 = solvers[0]
+    let init_div = if s0.name == "chorin" { get_divergence_norm() }
+                   else if s0.name == "pcg" { get_pcg_divergence_norm() }
+                   else if s0.name == "mac" { get_mac_divergence_norm() }
+                   else { get_simple_divergence_norm() }
+    records.push({
+      step: s0.steps, time: s0.steps.to_double() * dt,
+      div_norm: init_div, r_u: -1.0, r_v: -1.0,
+      ke: -1.0, cfl_max: -1.0, pcg_iters: 0,
+    })
+    println(format_monitor_csv(records, s0.name, re))
   } else if fmt == "netcdf" {
     match format_netcdf(solvers[0]) {
       Ok(s)    => println(s)

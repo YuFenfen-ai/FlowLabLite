@@ -40,9 +40,11 @@ done
 if [[ -z "$OUTPUT_FILE" ]]; then
   case "$FORMAT" in
     vtk)     OUTPUT_FILE="cavity_${SOLVER}.vtk" ;;
-    vti)     OUTPUT_FILE="cavity_${SOLVER}.vti" ;;
-    tecplot) OUTPUT_FILE="cavity_all.dat" ;;
-    csv)     OUTPUT_FILE="cavity_all.csv" ;;
+    vti)        OUTPUT_FILE="cavity_${SOLVER}.vti" ;;
+    tecplot)    OUTPUT_FILE="cavity_all.dat" ;;
+    csv)        OUTPUT_FILE="cavity_all.csv" ;;
+    centerline) OUTPUT_FILE="centerline_${SOLVER}.csv" ;;
+    monitor)    OUTPUT_FILE="monitor_${SOLVER}.csv" ;;
     list)    OUTPUT_FILE="" ;;
     *)       OUTPUT_FILE="results.json" ;;
   esac

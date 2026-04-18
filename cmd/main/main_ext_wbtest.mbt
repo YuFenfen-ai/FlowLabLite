@@ -829,6 +829,42 @@ test "tecplot_solution_time" {
 // J. Unit Tests — VTK XML ImageData (.vti) Format  (T92–T93)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════════
+// K. Unit Tests — Centerline CSV + Monitor CSV  (T94–T95)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T94 [Unit / BVA / OBT]
+// format_centerline_csv for nc=5 must contain exactly 2*nc = 10 data rows:
+// nc rows for u_vcl (vertical centerline) + nc rows for v_hcl (horizontal).
+test "centerline_csv_row_count" {
+  let nc = 5
+  let s  = make_test_export("chorin", nc, 1.0, 0.5, 0.0)
+  let out = format_centerline_csv(s)
+  let mut u_rows = 0
+  let mut v_rows = 0
+  out.split("\n").each(fn(line) {
+    if line.has_prefix("u_vcl,") { u_rows = u_rows + 1 }
+    if line.has_prefix("v_hcl,") { v_rows = v_rows + 1 }
+  })
+  assert_eq(u_rows, nc)
+  assert_eq(v_rows, nc)
+}
+
+// T95 [Unit / EP]
+// format_monitor_csv must contain the standard header row with all column names.
+test "monitor_csv_header_present" {
+  let rec : MonitorRecord = {
+    step: 0, time: 0.0, div_norm: 0.0,
+    r_u: -1.0, r_v: -1.0, ke: 0.0, cfl_max: -1.0, pcg_iters: 0,
+  }
+  let out = format_monitor_csv([rec], "chorin", 20.0)
+  assert_true(out.contains("step,time,div_norm,r_u,r_v,ke,cfl_max,pcg_iters"))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// J. Unit Tests — VTK XML ImageData (.vti) Format  (T92–T93)
+// ══════════════════════════════════════════════════════════════════════════════
+
 // T92 [Unit / EP]
 // format_vti must produce valid VTK XML: <?xml> declaration and
 // <VTKFile type="ImageData"> root element must be present.
