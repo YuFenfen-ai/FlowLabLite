@@ -199,6 +199,150 @@ fn upwind_convection_x(
   result
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SOR / SSOR pressure Poisson solvers
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These are standalone alternatives to the Gauss-Seidel inner-loop in
+// pressure_poisson_array.  They accept generic nr/nc so they can be unit-tested
+// on small grids without touching the global solver state.
+//
+// Boundary conditions follow the lid-driven cavity convention:
+//   p[:, nc-1] = p[:, nc-2]   right wall (dp/dx = 0)
+//   p[0, :]    = p[1, :]      bottom wall (dp/dy = 0)
+//   p[:, 0]    = p[:, 1]      left wall  (dp/dx = 0)
+//   p[nr-1, :] = 0.0          top lid (Dirichlet p=0)
+//
+// Reference: Ferziger & Perić, "Computational Methods for Fluid Dynamics",
+//   §3.7 SOR; Golub & Van Loan, "Matrix Computations" §10.1 SSOR.
+
+/// Apply cavity pressure boundary conditions in-place.
+fn apply_pressure_bc_sor(p : Array[Array[Double]], nr : Int, nc : Int) -> Unit {
+  // Right wall: dp/dx = 0
+  for i = 0; i < nr; i = i + 1 { p[i][nc - 1] = p[i][nc - 2] }
+  // Bottom wall: dp/dy = 0
+  for j = 0; j < nc; j = j + 1 { p[0][j] = p[1][j] }
+  // Left wall: dp/dx = 0
+  for i = 0; i < nr; i = i + 1 { p[i][0] = p[i][1] }
+  // Top lid: p = 0 (Dirichlet)
+  for j = 0; j < nc; j = j + 1 { p[nr - 1][j] = 0.0 }
+}
+
+/// Successive Over-Relaxation (SOR) pressure Poisson solver.
+///
+/// Solves ∇²p = b in-place using `nit_` sweeps of the SOR iteration with
+/// relaxation factor ω:
+///   p_GS  = (dy²(p_e + p_w) + dx²(p_n + p_s) − dx²dy²·b) / (2(dx²+dy²))
+///   p_new = (1−ω)·p_old + ω·p_GS
+///
+/// ω = 1.0  →  reduces exactly to Gauss-Seidel.
+/// ω ∈ (1,2) →  over-relaxation; optimal ω ≈ 2/(1+π/n) for Poisson on uniform grid.
+/// ω > 2    →  diverges.
+///
+/// Parameters:  p – pressure field (modified in-place)
+///              dx, dy – cell sizes; b – RHS; omega – relaxation factor
+///              nr, nc – grid dimensions; nit_ – number of sweeps
+fn pressure_poisson_sor(
+  p     : Array[Array[Double]],
+  dx    : Double,
+  dy    : Double,
+  b     : Array[Array[Double]],
+  omega : Double,
+  nr    : Int,
+  nc    : Int,
+  nit_  : Int,
+) -> Unit {
+  let dx2      = dx * dx
+  let dy2      = dy * dy
+  let inv_denom = 1.0 / (2.0 * (dx2 + dy2))
+  for _q = 0; _q < nit_; _q = _q + 1 {
+    for i = 1; i < nr - 1; i = i + 1 {
+      for j = 1; j < nc - 1; j = j + 1 {
+        let laplacian = (p[i][j + 1] + p[i][j - 1]) * dy2
+        let laplacian_y = (p[i + 1][j] + p[i - 1][j]) * dx2
+        let p_gs = (laplacian + laplacian_y - dx2 * dy2 * b[i][j]) * inv_denom
+        p[i][j] = (1.0 - omega) * p[i][j] + omega * p_gs
+      }
+    }
+    apply_pressure_bc_sor(p, nr, nc)
+  }
+}
+
+/// Symmetric SOR (SSOR) pressure Poisson solver.
+///
+/// Each SSOR sweep consists of:
+///   1. Forward  SOR sweep (i=1..nr-2, j=1..nc-2 ascending)
+///   2. Backward SOR sweep (i=nr-2..1, j=nc-2..1 descending)
+/// Both half-sweeps use the same ω.  SSOR is symmetric and can reduce
+/// effective spectral radius compared to forward-only SOR.
+fn pressure_poisson_ssor(
+  p     : Array[Array[Double]],
+  dx    : Double,
+  dy    : Double,
+  b     : Array[Array[Double]],
+  omega : Double,
+  nr    : Int,
+  nc    : Int,
+  nit_  : Int,
+) -> Unit {
+  let dx2       = dx * dx
+  let dy2       = dy * dy
+  let inv_denom = 1.0 / (2.0 * (dx2 + dy2))
+  for _q = 0; _q < nit_; _q = _q + 1 {
+    // Forward sweep
+    for i = 1; i < nr - 1; i = i + 1 {
+      for j = 1; j < nc - 1; j = j + 1 {
+        let laplacian = (p[i][j + 1] + p[i][j - 1]) * dy2
+        let laplacian_y = (p[i + 1][j] + p[i - 1][j]) * dx2
+        let p_gs = (laplacian + laplacian_y - dx2 * dy2 * b[i][j]) * inv_denom
+        p[i][j] = (1.0 - omega) * p[i][j] + omega * p_gs
+      }
+    }
+    apply_pressure_bc_sor(p, nr, nc)
+    // Backward sweep
+    let mut i = nr - 2
+    while i >= 1 {
+      let mut j = nc - 2
+      while j >= 1 {
+        let laplacian = (p[i][j + 1] + p[i][j - 1]) * dy2
+        let laplacian_y = (p[i + 1][j] + p[i - 1][j]) * dx2
+        let p_gs = (laplacian + laplacian_y - dx2 * dy2 * b[i][j]) * inv_denom
+        p[i][j] = (1.0 - omega) * p[i][j] + omega * p_gs
+        j = j - 1
+      }
+      i = i - 1
+    }
+    apply_pressure_bc_sor(p, nr, nc)
+  }
+}
+
+/// Compute the L2 residual of ∇²p − b on a uniform grid.
+/// Used to compare convergence quality between GS, SOR, and SSOR.
+fn pressure_residual_l2(
+  p  : Array[Array[Double]],
+  b  : Array[Array[Double]],
+  dx : Double,
+  dy : Double,
+  nr : Int,
+  nc : Int,
+) -> Double {
+  let dx2 = dx * dx
+  let dy2 = dy * dy
+  let mut sum_sq = 0.0
+  let mut cnt    = 0
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc - 1; j = j + 1 {
+      let lap = (p[i][j + 1] - 2.0 * p[i][j] + p[i][j - 1]) / dx2
+      let lap_y = (p[i + 1][j] - 2.0 * p[i][j] + p[i - 1][j]) / dy2
+      let res = lap + lap_y - b[i][j]
+      sum_sq = sum_sq + res * res
+      cnt    = cnt + 1
+    }
+  }
+  if cnt == 0 { return 0.0 }
+  (sum_sq / cnt.to_double()).sqrt()
+}
+
 /// First-order upwind convective term in y: v * ∂φ/∂y * dt  (backward difference).
 fn upwind_convection_y(
   phi   : Array[Array[Double]],

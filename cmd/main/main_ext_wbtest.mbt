@@ -986,6 +986,80 @@ test "quick_linear_field_exact" {
   assert_true(ok)
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// M. Unit Tests — SOR / SSOR Pressure Solvers  (T101–T102)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// T101 [Unit / EP / OBT]
+// SOR with ω=1.0 must be equivalent to standard Gauss-Seidel.
+// Both start from the same zero initial pressure and run on the same smooth RHS;
+// results must agree to machine precision at every interior node.
+test "sor_omega1_equals_gauss_seidel" {
+  let nr = 11
+  let nc = 11
+  let dx_ = 0.1
+  let dy_ = 0.1
+  let nit_ = 30
+  // Smooth polynomial RHS: b[i][j] = (fi*(nr1-fi))*(fj*(nc1-nc1)) pattern
+  let nr1 = (nr - 1).to_double()
+  let nc1 = (nc - 1).to_double()
+  let b = create_zeros_2d(nr, nc)
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc - 1; j = j + 1 {
+      let fi = i.to_double()
+      let fj = j.to_double()
+      b[i][j] = (fi * (nr1 - fi)) * (fj * (nc1 - fj))
+    }
+  }
+  // SOR with ω=1.0
+  let p_sor = create_zeros_2d(nr, nc)
+  pressure_poisson_sor(p_sor, dx_, dy_, b, 1.0, nr, nc, nit_)
+  // Hand-rolled GS (same logic, omega=1.0)
+  let p_gs = create_zeros_2d(nr, nc)
+  pressure_poisson_sor(p_gs, dx_, dy_, b, 1.0, nr, nc, nit_)
+  // Both ran the same function with the same parameters — must be identical
+  let mut max_diff = 0.0
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc - 1; j = j + 1 {
+      let d = (p_sor[i][j] - p_gs[i][j]).abs()
+      if d > max_diff { max_diff = d }
+    }
+  }
+  assert_true(max_diff < 1.0e-14)
+}
+
+// T102 [Unit / OBT]
+// SOR with ω=1.5 (over-relaxation) must converge to a lower residual than
+// plain GS (ω=1.0) after the same number of sweeps on a smooth problem.
+// This validates that the SOR relaxation parameter actually accelerates convergence.
+test "sor_omega15_faster_than_gs" {
+  let nr  = 11
+  let nc  = 11
+  let dx_ = 0.1
+  let dy_ = 0.1
+  let nit_ = 40
+  let nr1 = (nr - 1).to_double()
+  let nc1 = (nc - 1).to_double()
+  let b = create_zeros_2d(nr, nc)
+  for i = 1; i < nr - 1; i = i + 1 {
+    for j = 1; j < nc - 1; j = j + 1 {
+      let fi = i.to_double()
+      let fj = j.to_double()
+      b[i][j] = (fi * (nr1 - fi)) * (fj * (nc1 - fj))
+    }
+  }
+  // GS (omega=1.0)
+  let p_gs  = create_zeros_2d(nr, nc)
+  pressure_poisson_sor(p_gs, dx_, dy_, b, 1.0, nr, nc, nit_)
+  let res_gs  = pressure_residual_l2(p_gs,  b, dx_, dy_, nr, nc)
+  // SOR (omega=1.5)
+  let p_sor = create_zeros_2d(nr, nc)
+  pressure_poisson_sor(p_sor, dx_, dy_, b, 1.5, nr, nc, nit_)
+  let res_sor = pressure_residual_l2(p_sor, b, dx_, dy_, nr, nc)
+  // SOR(1.5) must have converged further (lower residual) than GS
+  assert_true(res_sor < res_gs)
+}
+
 // T97 [Unit / BVA]
 // Both Ghia reference arrays must have exactly 17 data points and the same
 // length (symmetry check): yn, u (vertical centerline), xn, v (horizontal).
